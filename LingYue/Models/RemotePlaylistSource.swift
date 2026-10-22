@@ -14,11 +14,11 @@ struct RemotePlaylistSource: MusicSource {
     }
 
     func fetchSongs() async throws -> [Song] {
-        if let feed = feedURLString, !feed.isEmpty, let url = encode(feed) {
+        if let feed = feedURLString, !feed.isEmpty, let url = Self.encode(feed) {
             let (data, _) = try await URLSession.shared.data(from: url)
             let items = try JSONDecoder().decode([PlaylistItem].self, from: data)
             return items.enumerated().compactMap { idx, item in
-                guard let u = encode(item.url) else { return nil }
+                guard let u = Self.encode(item.url) else { return nil }
                 return Song(
                     title: item.title,
                     artist: item.artist ?? "未知艺术家",

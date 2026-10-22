@@ -146,8 +146,9 @@ final class PlayerManager {
         player?.volume = volume
         // 流媒体时长未知时，异步读取真实时长（在线曲目 duration 为 0）
         if duration <= 0 {
+            let currentPlayer = player
             Task { [weak self] in
-                guard let item = self?.player?.currentItem,
+                guard let item = currentPlayer?.currentItem,
                       let dur = try? await item.asset.load(.duration), dur.isNumeric else { return }
                 await MainActor.run { self?.duration = dur.seconds }
             }
