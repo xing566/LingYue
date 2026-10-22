@@ -125,7 +125,7 @@ final class PlayerManager {
 
     func restoreOrder(_ order: [Song]) {
         guard let cur = currentSong else { return }
-        var rest = order.filter { $0.id != cur.id }
+        let rest = order.filter { $0.id != cur.id }
         queue = [cur] + rest
         shuffle = false
     }

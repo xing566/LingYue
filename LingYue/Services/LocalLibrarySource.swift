@@ -114,8 +114,6 @@ struct LocalLibrarySource: MusicSource {
                 meta.artist = value
             case .commonIdentifierAlbumName:
                 meta.album = value
-            case .commonIdentifierTrackNumber:
-                if let n = Int(value.components(separatedBy: "/").first ?? "") { meta.trackNumber = n }
             default:
                 break
             }
