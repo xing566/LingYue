@@ -1,0 +1,60 @@
+name: Build LingYue IPA
+
+# 在 Windows / 无 Mac 环境下，用 GitHub 的 macOS 机器编译出 IPA，
+# 下载后可用 Sideloadly 签名安装到 iPhone。
+#
+# 使用方法：
+#   1. 把本工程推送到你自己的 GitHub 仓库（main 分支）。
+#   2. 进入仓库 Actions 页 → “Build LingYue IPA” → Run workflow（或直接 push 触发）。
+#   3. 构建完成后在 Actions 的 Artifacts 里下载 LingYue-ipa.zip，
+#      解压得到 LingYue.ipa，用 Sideloadly 安装。
+
+on:
+  workflow_dispatch:        # 手动触发
+  push:
+    branches: [ main ]
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build unsigned .app (device)
+        run: |
+          xcodebuild \
+            -project LingYue.xcodeproj \
+            -scheme LingYue \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package .ipa
+        run: |
+          set -e
+          APP="build/Build/Products/Release-iphoneos/LingYue.app"
+          test -d "$APP" || { echo "App bundle not found: $APP"; exit 1; }
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr LingYue.ipa Payload
+          ls -lh LingYue.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LingYue-ipa
+          path: LingYue.ipa
+          if-no-files-found: error

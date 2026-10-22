@@ -1,0 +1,19 @@
+# Xcode
+build/
+DerivedData/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+
+# XcodeGen 生成的工程（用 project.yml 重新生成）
+*.xcodeproj/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# 输出
+*.ipa
+*.zip
