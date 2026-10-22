@@ -1,36 +1,55 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 音乐库：歌曲 / 专辑 / 歌手 三个分段，支持导入本地音频。
+/// 音乐库：本地（歌曲/专辑/歌手）与在线（歌单）。
 struct LibraryView: View {
     @Environment(LibraryStore.self) private var library
     @Environment(PlayerManager.self) private var player
     @State private var segment: Segment = .songs
+    @State private var sourceMode: SourceMode = .local
     @State private var importPresented = false
 
     enum Segment: String, CaseIterable {
         case songs = "歌曲", albums = "专辑", artists = "歌手"
     }
 
+    enum SourceMode: String, CaseIterable {
+        case local = "本地曲库", online = "在线歌单"
+    }
+
     var body: some View {
         @Bindable var library = library
         VStack(spacing: 0) {
-            Picker("分类", selection: $segment) {
-                ForEach(Segment.allCases, id: \.self) { seg in
-                    Text(seg.rawValue).tag(seg)
+            // 来源切换：本地 / 在线
+            Picker("来源", selection: $sourceMode) {
+                ForEach(SourceMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
+            .padding(.top, 6)
 
-            Group {
-                switch segment {
-                case .songs: songsList
-                case .albums: albumsList
-                case .artists: artistsList
+            if sourceMode == .local {
+                Picker("分类", selection: $segment) {
+                    ForEach(Segment.allCases, id: \.self) { seg in
+                        Text(seg.rawValue).tag(seg)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+
+                Group {
+                    switch segment {
+                    case .songs: songsList
+                    case .albums: albumsList
+                    case .artists: artistsList
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                onlineList
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .navigationTitle("音乐库")
         .toolbar {
@@ -52,10 +71,64 @@ struct LibraryView: View {
             }
         }
         .overlay {
-            if library.songs.isEmpty && !library.isScanning {
+            if sourceMode == .local && library.songs.isEmpty && !library.isScanning {
                 emptyState
             }
         }
+        .task(id: sourceMode) {
+            if sourceMode == .online { await library.fetchOnlineSongs() }
+        }
+    }
+
+    // MARK: 在线歌单
+
+    private var onlineList: some View {
+        Group {
+            if library.onlineSongs.isEmpty {
+                VStack(spacing: 12) {
+                    if library.isFetchingOnline {
+                        ProgressView()
+                        Text("正在加载在线歌单…")
+                            .font(.system(size: 13)).foregroundColor(.secondary)
+                    } else {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 44)).foregroundColor(.secondary)
+                        Text("在线歌单为空或加载失败")
+                            .font(.headline)
+                        Text("可在「设置 → 在线歌单」填入你自己的歌单地址，\n否则使用内置默认歌单（公版名曲）。")
+                            .font(.system(size: 13)).foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(30)
+            } else {
+                List {
+                    Section {
+                        Button {
+                            player.play(library.onlineSongs[0], in: library.onlineSongs)
+                        } label: {
+                            Label("播放全部", systemImage: "play.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.accentColor)
+                        }
+                        Button {
+                            Task { await library.fetchOnlineSongs() }
+                        } label: {
+                            Label("刷新歌单", systemImage: "arrow.clockwise")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    ForEach(library.onlineSongs) { song in
+                        SongRowView(song: song, trailing: AnyView(
+                            Image(systemName: "arrow.down.to.line.compact")
+                                .foregroundColor(.secondary)
+                        ))
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: 歌曲列表
@@ -88,7 +161,7 @@ struct LibraryView: View {
                 ForEach(library.albums) { album in
                     NavigationLink(value: album) {
                         VStack(alignment: .leading, spacing: 8) {
-                            ArtworkView(data: album.songs.first?.artworkData, size: 160)
+                            ArtworkView(data: album.songs.first?.artworkData, artworkURL: album.songs.first?.artworkURL, size: 160)
                             Text(album.album)
                                 .font(.system(size: 14, weight: .medium))
                                 .lineLimit(1)

@@ -32,6 +32,8 @@ targets:
           UIColorName: ""
         UIBackgroundModes:
           - audio
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
         ITSAppUsesNonExemptEncryption: false
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

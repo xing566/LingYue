@@ -8,7 +8,7 @@ struct MiniPlayerView: View {
     var body: some View {
         HStack(spacing: 12) {
             if let song = player.currentSong {
-                ArtworkView(data: song.artworkData, size: 44)
+                ArtworkView(song: song, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.displayTitle)
                         .font(.system(size: 15, weight: .medium))

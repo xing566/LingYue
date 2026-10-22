@@ -60,7 +60,7 @@ struct PlaylistView: View {
     private func playlistCover(_ pl: Playlist) -> some View {
         let songs = library.songs(in: pl)
         let cover = songs.first?.artworkData
-        return ArtworkView(data: cover, size: 48)
+        return ArtworkView(data: cover, artworkURL: songs.first?.artworkURL, size: 48)
     }
 
     private var emptyState: some View {

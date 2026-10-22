@@ -144,6 +144,14 @@ final class PlayerManager {
         let url = source.resolveURL(for: song)
         player = AVPlayer(url: url)
         player?.volume = volume
+        // 流媒体时长未知时，异步读取真实时长（在线曲目 duration 为 0）
+        if duration <= 0 {
+            Task { [weak self] in
+                guard let item = self?.player?.currentItem,
+                      let dur = try? await item.asset.load(.duration), dur.isNumeric else { return }
+                await MainActor.run { self?.duration = dur.seconds }
+            }
+        }
         timeObserver = player?.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
             queue: .main

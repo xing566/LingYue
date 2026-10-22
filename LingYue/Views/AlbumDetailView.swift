@@ -9,7 +9,7 @@ struct AlbumDetailView: View {
         List {
             Section {
                 HStack(spacing: 16) {
-                    ArtworkView(data: album.songs.first?.artworkData, size: 120)
+                    ArtworkView(data: album.songs.first?.artworkData, artworkURL: album.songs.first?.artworkURL, size: 120)
                     VStack(alignment: .leading, spacing: 6) {
                         Text(album.album)
                             .font(.title2.weight(.bold))

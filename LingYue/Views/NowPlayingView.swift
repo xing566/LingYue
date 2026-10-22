@@ -42,7 +42,7 @@ struct NowPlayingView: View {
 
                 // 封面
                 if let song = player.currentSong {
-                    ArtworkView(data: song.artworkData, size: 320)
+                    ArtworkView(song: song, size: 320)
                         .shadow(color: .black.opacity(0.6), radius: 30, x: 0, y: 12)
                         .padding(.bottom, 40)
 

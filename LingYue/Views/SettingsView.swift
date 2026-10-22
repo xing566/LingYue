@@ -20,31 +20,40 @@ struct SettingsView: View {
                 }
             }
 
-            Section("关于") {
+            Section {
+                LabeledContent("本地歌曲", value: "\(library.songs.count) 首")
+                LabeledContent("在线歌曲", value: "\(library.onlineSongs.count) 首")
                 HStack {
-                    Label("版本", systemImage: "info.circle")
+                    Label("音乐来源", systemImage: "externaldrive")
                     Spacer()
-                    Text("1.0.0").foregroundColor(.secondary)
+                    Text("\(library.source.kind.displayName) / \(library.streamingSource.kind.displayName)")
+                        .foregroundColor(.secondary)
                 }
+            } header: {
+                Text("曲库统计")
+            }
+
+            Section {
+                TextField("https://…/playlist.json", text: feedBinding)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Text("填写自定义在线歌单 JSON 地址后，音乐库「在线歌单」将改用该地址。\n格式：数组 [{ title, artist?, url }]，url 为可直接播放的音频地址。\n留空则使用内置默认歌单（Internet Archive 公版名曲）。")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("在线歌单（自定义地址，可选）")
+            }
+
+            Section("关于") {
                 Button {
                     aboutPresented = true
                 } label: {
                     Label("关于聆乐", systemImage: "music.note")
                 }
-                HStack {
-                    Label("音乐来源", systemImage: "externaldrive")
-                    Spacer()
-                    Text(library.source.kind.displayName).foregroundColor(.secondary)
-                }
-                HStack {
-                    Label("歌曲数量", systemImage: "music.note.list")
-                    Spacer()
-                    Text("\(library.songs.count) 首").foregroundColor(.secondary)
-                }
             }
 
             Section("说明") {
-                Text("聆乐以本地播放为主，架构上预留了在线流媒体扩展点（MusicSource 协议）。以后接入在线源无需改动播放器与界面。")
+                Text("聆乐支持本地播放与在线歌单两种来源。在线源通过 MusicSource 协议接入，以后可替换为任意平台。")
                     .font(.system(size: 13))
                     .foregroundColor(.secondary)
             }
@@ -54,7 +63,14 @@ struct SettingsView: View {
         .alert("聆乐", isPresented: $aboutPresented) {
             Button("好的", role: .cancel) {}
         } message: {
-            Text("一款以本地播放为主、预留在线流媒体能力的 iOS 音乐播放器。")
+            Text("一款支持本地播放与在线歌单的 iOS 音乐播放器。")
         }
+    }
+
+    private var feedBinding: Binding<String> {
+        Binding(
+            get: { library.feedURL ?? "" },
+            set: { library.feedURL = $0.isEmpty ? nil : $0 }
+        )
     }
 }

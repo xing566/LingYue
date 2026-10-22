@@ -18,7 +18,7 @@ struct PlaylistDetailView: View {
                 List {
                     Section {
                         HStack(spacing: 16) {
-                            ArtworkView(data: songs.first?.artworkData, size: 100)
+                            ArtworkView(data: songs.first?.artworkData, artworkURL: songs.first?.artworkURL, size: 100)
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(pl.name).font(.title2.weight(.bold))
                                 Text("\(songs.count) 首歌曲").font(.caption).foregroundColor(.secondary)

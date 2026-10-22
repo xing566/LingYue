@@ -1,15 +1,16 @@
 import Foundation
 
-/// 音乐来源类型。当前只有本地播放；在线流媒体作为预留枚举值，方便后续扩展。
+/// 音乐来源类型。本地播放与在线流媒体。
 enum MusicSourceKind: String, Codable, CaseIterable, Identifiable {
     case local
-    // 预留：case streaming
+    case streaming
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
         case .local: return "本地曲库"
+        case .streaming: return "在线曲库"
         }
     }
 }
@@ -21,7 +22,8 @@ struct Song: Identifiable, Codable, Hashable {
     var artist: String
     var album: String
     var artworkData: Data?          // 缓存的封面图（JPEG/PNG），可为 nil
-    var fileURL: URL                // 本地文件绝对路径
+    var artworkURL: URL?            // 网络封面地址（在线曲库用）
+    var fileURL: URL                // 可播放地址：本地为文件 URL，在线为流地址
     var duration: TimeInterval
     var trackNumber: Int?
     var dateAdded: Date
@@ -32,6 +34,7 @@ struct Song: Identifiable, Codable, Hashable {
          artist: String = "未知艺术家",
          album: String = "未知专辑",
          artworkData: Data? = nil,
+         artworkURL: URL? = nil,
          fileURL: URL,
          duration: TimeInterval = 0,
          trackNumber: Int? = nil,
@@ -42,6 +45,7 @@ struct Song: Identifiable, Codable, Hashable {
         self.artist = artist
         self.album = album
         self.artworkData = artworkData
+        self.artworkURL = artworkURL
         self.fileURL = fileURL
         self.duration = duration
         self.trackNumber = trackNumber

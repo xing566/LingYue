@@ -5,8 +5,24 @@ import Observation
 @Observable
 final class LibraryStore {
 
-    /// 音乐来源（本地；预留在线扩展点）
+    /// 音乐来源（本地）
     let source: MusicSource
+
+    /// 在线歌单源（方案1：内置默认歌单 + 可自定义地址）
+    private(set) var streamingSource = RemotePlaylistSource(
+        feedURLString: UserDefaults.standard.string(forKey: "feedURL")
+    )
+
+    /// 自定义在线歌单地址（设置里可改，持久化）
+    var feedURL: String? {
+        didSet {
+            UserDefaults.standard.set(feedURL, forKey: "feedURL")
+            streamingSource.feedURLString = feedURL
+        }
+    }
+
+    private(set) var onlineSongs: [Song] = []
+    var isFetchingOnline = false
 
     private(set) var songs: [Song] = []
     private(set) var playlists: [Playlist] = []
@@ -21,6 +37,21 @@ final class LibraryStore {
         self.songsFileURL = dir.appendingPathComponent("songs.json")
         self.playlistsFileURL = dir.appendingPathComponent("playlists.json")
         loadPersistedState()
+    }
+
+    // MARK: - 在线曲库（方案1）
+
+    /// 拉取在线歌单（内置默认或自定义地址）
+    @MainActor
+    func fetchOnlineSongs() async {
+        isFetchingOnline = true
+        defer { isFetchingOnline = false }
+        do {
+            onlineSongs = try await streamingSource.fetchSongs()
+        } catch {
+            onlineSongs = []
+            print("在线歌单加载失败: \(error)")
+        }
     }
 
     // MARK: - 导入 / 扫描
