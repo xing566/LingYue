@@ -128,6 +128,19 @@ struct NovelReaderView: View {
     @State private var scrollTarget: Int?
     /// 无中文语音时的提示文案。
     @State private var voiceHint: String?
+    /// 当前读到的最靠上可见段落下标（用于保存/恢复阅读进度）。
+    @State private var currentIndex = 0
+
+    /// 阅读进度在 UserDefaults 中的稳定键（按文件路径，跨启动不变）。
+    private var progressKey: String { "novelProgress_\(novel.fileURL.path)" }
+
+    /// 记录「最靠上可见段落」的偏好键：index → 该段在滚动坐标系里的 minY。
+    private struct VisibleIndexKey: PreferenceKey {
+        static var defaultValue: [Int: CGFloat] = [:]
+        static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+            value.merge(nextValue()) { $1 }
+        }
+    }
 
     /// 可选用的声音包（优先中文，其余按语言归类）
     var availableVoices: [AVSpeechSynthesisVoice] {
@@ -197,11 +210,28 @@ struct NovelReaderView: View {
                                     .textSelection(.enabled)
                                     .id(index)
                                     .onTapGesture { speak(fromParagraph: index) }
+                                    .background(
+                                        GeometryReader { geo in
+                                            Color.clear.preference(
+                                                key: VisibleIndexKey.self,
+                                                value: [index: geo.frame(in: .named("novelScroll")).minY])
+                                        }
+                                    )
                             }
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 24)
                     }
+                }
+                .coordinateSpace(name: "novelScroll")
+                .onPreferenceChange(VisibleIndexKey.self) { frames in
+                    guard !frames.isEmpty else { return }
+                    // 最靠上且已进入/越过顶部的段落 = 当前阅读位置
+                    let visible = frames.filter { $0.value >= 0 }.min(by: { $0.value < $1.value })?.key
+                        ?? frames.min(by: { $0.value < $1.value })?.key
+                        ?? 0
+                    currentIndex = visible
+                    saveProgress(visible)
                 }
                 .onChange(of: scrollTarget) { new in
                     if let new { withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(new, anchor: .top) } }
@@ -235,7 +265,10 @@ struct NovelReaderView: View {
         }
         .sheet(isPresented: $showTOC) { tocSheet }
         .task { loadText() }
-        .onDisappear { stopSpeak() }
+        .onDisappear {
+            saveProgress(currentIndex)
+            stopSpeak()
+        }
     }
 
     /// 后台加载：先读开头一小部分立刻显示，再分块读取全文并回报百分比。
@@ -261,8 +294,24 @@ struct NovelReaderView: View {
                 self.paragraphs = self.buildParagraphs(full)
                 self.tocEntries = self.buildTOC(from: self.paragraphs)
                 self.isLoading = false
+                // 恢复上次阅读进度：全文就绪后滚到记住的位置
+                self.restoreProgress()
             }
         }
+    }
+
+    /// 保存阅读进度（段落下标）到 UserDefaults。
+    private func saveProgress(_ index: Int) {
+        guard index > 0 else { return }
+        UserDefaults.standard.set(index, forKey: progressKey)
+    }
+
+    /// 恢复阅读进度：读取上次保存的段落下标并滚动到那里。
+    private func restoreProgress() {
+        guard let saved = UserDefaults.standard.object(forKey: progressKey) as? Int,
+              saved > 0, saved < paragraphs.count else { return }
+        scrollTarget = saved
+        currentIndex = saved
     }
 
     /// 识别章节标题生成目录（“第X章/回/节/卷”、“卷一”、“Chapter N”等）。
