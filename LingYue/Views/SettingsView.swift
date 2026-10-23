@@ -45,6 +45,11 @@ struct SettingsView: View {
             }
 
             Section("关于") {
+                NavigationLink {
+                    CacheManagementView()
+                } label: {
+                    Label("缓存管理", systemImage: "internaldrive")
+                }
                 Button {
                     aboutPresented = true
                 } label: {
