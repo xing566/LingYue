@@ -17,6 +17,11 @@ struct Novel: Identifiable, Hashable {
 /// 本地 TXT 小说来源：扫描 / 导入 Documents/Novels 目录，并按常见编码读取文本。
 struct LocalNovelSource {
 
+    /// 支持的文本格式（统一按多编码解码后阅读）
+    private static let textExtensions: Set<String> = [
+        "txt", "md", "text", "log", "srt", "lrc", "sub", "rtf", "csv"
+    ]
+
     static var libraryURL: URL {
         LocalLibrarySource.documentsURL.appendingPathComponent("Novels", isDirectory: true)
     }
@@ -30,26 +35,26 @@ struct LocalNovelSource {
             options: [.skipsHiddenFiles]
         )) ?? []
         return files
-            .filter { $0.pathExtension.lowercased() == "txt" }
+            .filter { textExtensions.contains($0.pathExtension.lowercased()) }
             .map { Novel(name: $0.deletingPathExtension().lastPathComponent, fileURL: $0) }
             .sorted { $0.name < $1.name }
     }
 
-    /// 从文件 App 导入 TXT（security-scoped），返回新增 Novel 列表
+    /// 从文件 App 导入文本（security-scoped），返回新增 Novel 列表
     static func importFiles(from urls: [URL]) -> [Novel] {
         try? FileManager.default.createDirectory(at: libraryURL, withIntermediateDirectories: true)
         var added: [Novel] = []
         for src in urls {
             let accessed = src.startAccessingSecurityScopedResource()
             defer { if accessed { src.stopAccessingSecurityScopedResource() } }
-            guard src.pathExtension.lowercased() == "txt" else { continue }
+            guard textExtensions.contains(src.pathExtension.lowercased()) else { continue }
             let dest = libraryURL.appendingPathComponent(src.lastPathComponent)
             do {
                 try? FileManager.default.removeItem(at: dest)
                 try FileManager.default.copyItem(at: src, to: dest)
                 added.append(Novel(name: dest.deletingPathExtension().lastPathComponent, fileURL: dest))
             } catch {
-                print("导入 TXT 失败 \(src.lastPathComponent): \(error)")
+                print("导入文本失败 \(src.lastPathComponent): \(error)")
             }
         }
         return added

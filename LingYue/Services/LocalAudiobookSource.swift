@@ -4,8 +4,10 @@ import AVFoundation
 /// 本地有声书来源：扫描 Documents/Audiobooks 目录，支持导入音频文件。
 struct LocalAudiobookSource {
 
+    /// 支持的音频格式（AVFoundation 负责实际解码）
     private static let audioExtensions: Set<String> = [
-        "mp3", "m4a", "m4b", "aac", "wav", "flac", "aiff", "caf"
+        "mp3", "m4a", "m4b", "aac", "wav", "flac", "aiff", "caf",
+        "mp4", "m4v", "ogg", "opus", "amr", "wma", "aif"
     ]
 
     static var libraryURL: URL {

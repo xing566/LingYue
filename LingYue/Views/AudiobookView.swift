@@ -66,7 +66,7 @@ struct AudiobookView: View {
             } else if segment == .localRead {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { importTxtPresented = true } label: {
-                        Label("导入TXT", systemImage: "plus.circle")
+                        Label("导入文本", systemImage: "plus.circle")
                     }
                 }
             }
@@ -342,7 +342,7 @@ struct AudiobookView: View {
             if novels.isEmpty {
                 VStack(spacing: 10) {
                     Image(systemName: "text.book.closed").font(.system(size: 44)).foregroundColor(.secondary)
-                    Text("还没有本地 TXT 小说\n点击右上角「导入TXT」添加 .txt 文件\n阅读时支持上下滑动、调节字号与明暗主题")
+                    Text("还没有本地文本\n点击右上角「导入文本」添加 .txt / .md / .srt 等文件\n阅读时支持上下滑动、调节字号、明暗主题与朗读")
                         .font(.system(size: 13)).foregroundColor(.secondary).multilineTextAlignment(.center)
                 }
                 .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -354,7 +354,7 @@ struct AudiobookView: View {
                                 Image(systemName: "doc.text").font(.system(size: 26)).foregroundColor(.accentColor)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(novel.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
-                                    Text("TXT 小说 · 点击阅读").font(.system(size: 12)).foregroundColor(.secondary)
+                                    Text("本地文本 · 点击阅读").font(.system(size: 12)).foregroundColor(.secondary)
                                 }
                             }
                         }
