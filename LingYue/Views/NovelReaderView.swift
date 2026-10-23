@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import AVFAudio
 import Combine
 
 /// 语音合成控制器：负责朗读状态与代理回调（播放完成/取消时更新 UI）。
@@ -233,13 +234,25 @@ struct NovelReaderView: View {
     }
 
     private func startSpeak() {
+        // 朗读前激活播放音频会话（.playback），让声音即使在「静音键」开启时也能播出。
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? AVAudioSession.sharedInstance().setActive(true)
+
         let text = content.isEmpty ? "（没有可朗读的文本）" : content
         let utt = AVSpeechUtterance(string: text)
-        utt.voice = selectedVoice
+        utt.voice = resolveVoice()
         utt.rate = rate
         synthesizer.delegate = speech
+        synthesizer.stopSpeaking(at: .immediate)
         synthesizer.speak(utt)
         speech.isSpeaking = true
+    }
+
+    /// 声音包解析：优先用户已选，其次中文，最后任选一个可用声音，避免出现无声音包。
+    private func resolveVoice() -> AVSpeechSynthesisVoice? {
+        if !voiceID.isEmpty, let v = AVSpeechSynthesisVoice(identifier: voiceID) { return v }
+        if let v = AVSpeechSynthesisVoice(language: "zh-CN") { return v }
+        return AVSpeechSynthesisVoice.speechVoices().first
     }
 
     private func stopSpeak() {
