@@ -58,7 +58,9 @@ struct LocalNovelSource {
     /// 读取 TXT 文本：依次尝试 UTF-8 / UTF-16 / GBK(GB18030)，兼容中文常见编码。
     static func readText(from url: URL) -> String {
         guard let data = try? Data(contentsOf: url) else { return "" }
-        if let s = String(data: data, encoding: .utf8) { return s }
+        // 去掉 UTF-8 BOM，避免开头出现 \u{FEFF}
+        let body = data.starts(with: [0xEF, 0xBB, 0xBF]) ? data.dropFirst(3) : data[...]
+        if let s = String(data: body, encoding: .utf8) { return s }
         if let s = String(data: data, encoding: .utf16) { return s }
         let gbk = String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(
             CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)))

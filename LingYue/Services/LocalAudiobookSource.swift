@@ -12,6 +12,9 @@ struct LocalAudiobookSource {
         LocalLibrarySource.documentsURL.appendingPathComponent("Audiobooks", isDirectory: true)
     }
 
+    /// 本地有声书库变化通知（下载完成后发出，让列表刷新）
+    static let libraryChanged = Notification.Name("LocalAudiobookLibraryChanged")
+
     /// 扫描本地有声书目录
     static func scan() async -> [Song] {
         try? FileManager.default.createDirectory(at: libraryURL, withIntermediateDirectories: true)
@@ -47,7 +50,34 @@ struct LocalAudiobookSource {
         return added
     }
 
+    /// 下载在线有声书整本到本地（Documents/Audiobooks），供离线播放。
+    /// progress 回调：已下载数 / 总数。返回下载成功的本地 Song 列表。
+    static func download(_ book: Audiobook, progress: ((Int, Int) -> Void)? = nil) async -> [Song] {
+        try? FileManager.default.createDirectory(at: libraryURL, withIntermediateDirectories: true)
+        let total = book.sections.count
+        var downloaded: [Song] = []
+        for (i, section) in book.sections.enumerated() {
+            let ext = section.fileURL.pathExtension.isEmpty ? "mp3" : section.fileURL.pathExtension
+            let dest = libraryURL
+                .appendingPathComponent("\(book.title)-第\(i + 1)章.\(ext)")
+            do {
+                let (data, _) = try await URLSession.shared.data(from: section.fileURL)
+                try? FileManager.default.removeItem(at: dest)
+                try data.write(to: dest)
+                if let song = await makeSong(from: dest) { downloaded.append(song) }
+            } catch {
+                print("下载章节失败 \(section.title): \(error)")
+            }
+            progress?(i + 1, total)
+        }
+        if !downloaded.isEmpty {
+            NotificationCenter.default.post(name: libraryChanged, object: nil)
+        }
+        return downloaded
+    }
+
     private static func makeSong(from url: URL) async -> Song? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let asset = AVURLAsset(url: url)
         var duration: TimeInterval = 0
         if let d = try? await asset.load(.duration), d.isNumeric {

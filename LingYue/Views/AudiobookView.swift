@@ -5,7 +5,13 @@ import UniformTypeIdentifiers
 struct AudiobookView: View {
     @Environment(PlayerManager.self) private var player
     @State private var segment: Segment = .online
+    @State private var onlineMode: OnlineMode = .network
     @State private var query = ""
+    @State private var webQuery = ""
+    @State private var customURL = UserDefaults.standard.string(forKey: "novelFeedURL") ?? ""
+    @State private var customBook: Audiobook?
+    @State private var isCustomLoading = false
+    @State private var customError: String?
     @State private var books: [Audiobook] = []
     @State private var localSongs: [Song] = []
     @State private var novels: [Novel] = []
@@ -18,6 +24,20 @@ struct AudiobookView: View {
         case online = "在线小说"
         case local = "本地有声书"
         case localRead = "本地阅读"
+    }
+
+    enum OnlineMode: String, CaseIterable {
+        case network = "网络搜索"
+        case web = "网页搜索"
+        case custom = "自定义源"
+    }
+
+    /// 网页搜索：把关键词带去内置浏览器，找在线有声书/小说资源。
+    private var webURL: URL? {
+        let q = webQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return nil }
+        let enc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
+        return URL(string: "https://www.bing.com/search?q=\(enc)%20%E6%9C%89%E5%A3%B0%E4%B9%A6")
     }
 
     var body: some View {
@@ -65,7 +85,7 @@ struct AudiobookView: View {
         }
         .fileImporter(
             isPresented: $importTxtPresented,
-            allowedContentTypes: [.plainText, .text],
+            allowedContentTypes: [.item],
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result {
@@ -81,6 +101,9 @@ struct AudiobookView: View {
             localSongs = await LocalAudiobookSource.scan()
             novels = LocalNovelSource.scan()
         }
+        .onReceive(NotificationCenter.default.publisher(for: LocalAudiobookSource.libraryChanged)) { _ in
+            Task { localSongs = await LocalAudiobookSource.scan() }
+        }
         .navigationDestination(for: Audiobook.self) { book in
             BookDetailView(book: book)
         }
@@ -92,22 +115,48 @@ struct AudiobookView: View {
     private func search() {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return }
-        isSearching = true
-        errorText = nil
-        Task {
-            do {
-                books = try await LibrivoxSource.search(q)
-            } catch {
-                errorText = "搜索失败：\(error.localizedDescription)"
-                books = []
+        if onlineMode == .network {
+            isSearching = true
+            errorText = nil
+            Task {
+                do {
+                    books = try await LibrivoxSource.search(q)
+                } catch {
+                    errorText = "搜索失败：\(error.localizedDescription)"
+                    books = []
+                }
+                isSearching = false
             }
-            isSearching = false
+        } else if onlineMode == .web {
+            webQuery = q
         }
     }
 
     // MARK: 在线小说
 
     private var onlinePane: some View {
+        VStack(spacing: 0) {
+            Picker("模式", selection: $onlineMode) {
+                ForEach(OnlineMode.allCases, id: \.self) { m in
+                    Text(m.rawValue).tag(m)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
+            .padding(.top, 6)
+
+            if onlineMode == .network {
+                networkOnlinePane
+            } else if onlineMode == .web {
+                webOnlinePane
+            } else {
+                customOnlinePane
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var networkOnlinePane: some View {
         Group {
             if isSearching {
                 VStack(spacing: 12) {
@@ -137,7 +186,7 @@ struct AudiobookView: View {
                                     .foregroundColor(.accentColor)
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(book.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
-                                    Text("\(book.author) · \(book.sections.count) 章")
+                                    Text("\(book.author) · \(book.sections.count) 章 · 可下载")
                                         .font(.system(size: 12)).foregroundColor(.secondary).lineLimit(1)
                                 }
                             }
@@ -148,6 +197,106 @@ struct AudiobookView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var webOnlinePane: some View {
+        Group {
+            if let url = webURL {
+                WebBrowserView(url: url)
+            } else {
+                VStack(spacing: 10) {
+                    Image(systemName: "safari").font(.system(size: 44)).foregroundColor(.secondary)
+                    Text("输入关键词后按搜索，在网页中找可下载的有声书/小说资源\n（打开内置浏览器，可浏览 / 返回）")
+                        .font(.system(size: 13)).foregroundColor(.secondary).multilineTextAlignment(.center)
+                }
+                .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private var customOnlinePane: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                TextField("粘贴 RSS / 有声书 feed 网址", text: $customURL)
+                    .textFieldStyle(.roundedBorder)
+                    .autocapitalization(.none)
+                    .keyboardType(.URL)
+                Button {
+                    loadCustom()
+                } label: {
+                    Text("加载").fontWeight(.semibold)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(customURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isCustomLoading)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
+            Group {
+                if isCustomLoading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("正在加载章节…").font(.system(size: 13)).foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let customError {
+                    VStack(spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle").font(.system(size: 40)).foregroundColor(.secondary)
+                        Text(customError).font(.system(size: 13)).foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let customBook {
+                    List {
+                        NavigationLink(value: customBook) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "books.vertical.fill")
+                                    .font(.system(size: 30)).foregroundColor(.accentColor)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(customBook.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                                    Text("\(customBook.sections.count) 章 · 可下载")
+                                        .font(.system(size: 12)).foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                } else {
+                    VStack(spacing: 10) {
+                        Image(systemName: "link.circle").font(.system(size: 44)).foregroundColor(.secondary)
+                        Text("粘贴你常听的有声书 / 播客 RSS 地址\n加载后即可在线播放，并可在详情页「下载整本」\n（地址会保存在本机）")
+                            .font(.system(size: 13)).foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func loadCustom() {
+        let raw = customURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, let url = URL(string: raw) else {
+            customError = "网址格式不正确"
+            return
+        }
+        UserDefaults.standard.set(raw, forKey: "novelFeedURL")
+        isCustomLoading = true
+        customError = nil
+        Task {
+            let chapters = await FeedSource.fetchChapters(from: url)
+            await MainActor.run {
+                if chapters.isEmpty {
+                    customError = "未能从该地址解析到章节（请确认是 RSS/播客 feed 或 mp3 链接）"
+                    customBook = nil
+                } else {
+                    let name = url.host ?? "自定义源"
+                    customBook = Audiobook(title: name, author: "自定义源", sections: chapters)
+                }
+                isCustomLoading = false
+            }
+        }
     }
 
     // MARK: 本地有声书
@@ -214,10 +363,13 @@ struct AudiobookView: View {
     }
 }
 
-/// 单本有声书详情：分章节列表，可播放整本或单章。
+/// 单本有声书详情：分章节列表，可播放整本或单章，并可「下载整本」到本地离线听。
 struct BookDetailView: View {
     @Environment(PlayerManager.self) private var player
     let book: Audiobook
+    @State private var isDownloading = false
+    @State private var downloaded = 0
+    @State private var doneMessage: String?
 
     var body: some View {
         List {
@@ -230,6 +382,14 @@ struct BookDetailView: View {
                         .foregroundColor(.accentColor)
                 }
             }
+            if isDownloading {
+                Section {
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("正在下载… \(downloaded)/\(book.sections.count)").font(.system(size: 13)).foregroundColor(.secondary)
+                    }
+                }
+            }
             ForEach(Array(book.sections.enumerated()), id: \.element.id) { idx, song in
                 SongRowView(song: song, showIndex: idx)
             }
@@ -237,5 +397,41 @@ struct BookDetailView: View {
         .listStyle(.plain)
         .navigationTitle(book.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if let doneMessage {
+                    Text(doneMessage).font(.system(size: 12)).foregroundColor(.green)
+                } else if isDownloading {
+                    ProgressView()
+                } else {
+                    Button {
+                        downloadBook()
+                    } label: {
+                        Label("下载整本", systemImage: "arrow.down.circle")
+                    }
+                }
+            }
+        }
+    }
+
+    private func downloadBook() {
+        isDownloading = true
+        downloaded = 0
+        Task {
+            let saved = await LocalAudiobookSource.download(book) { cur, total in
+                Task { @MainActor in downloaded = cur }
+            }
+            isDownloading = false
+            if saved.isEmpty {
+                doneMessage = "下载失败"
+            } else {
+                doneMessage = "已下载 \(saved.count) 章"
+            }
+            // 几秒后清掉提示文字
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                doneMessage = nil
+            }
+        }
     }
 }
