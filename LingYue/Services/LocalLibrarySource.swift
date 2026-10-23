@@ -115,9 +115,8 @@ struct LocalLibrarySource: MusicSource {
         var meta = Metadata()
         meta.title = url.deletingPathExtension().lastPathComponent
 
-        if let d = try? await asset.load(.duration), d.isNumeric {
-            meta.duration = d.seconds
-        }
+        // 现代异步 API 读时长，失败则退回旧同步 API，再退回临时播放器探测。
+        meta.duration = await loadDuration(of: asset)
         let items = (try? await asset.load(.commonMetadata)) ?? []
         for item in items {
             guard let value = item.value as? String else { continue }
@@ -137,5 +136,27 @@ struct LocalLibrarySource: MusicSource {
             meta.artwork = data
         }
         return meta
+    }
+
+    /// 尽量可靠地读取音频时长，多重兜底。
+    private func loadDuration(of asset: AVURLAsset) async -> TimeInterval {
+        // 1) 现代异步 API
+        if let d = try? await asset.load(.duration), d.isNumeric, d.seconds.isFinite, d.seconds > 0 {
+            return d.seconds
+        }
+        // 2) 旧同步 API（部分文件仅旧接口可用）
+        let legacy = asset.duration
+        if legacy.isNumeric, legacy.seconds.isFinite, legacy.seconds > 0 {
+            return legacy.seconds
+        }
+        // 3) 用临时播放器 item 探测（等待 ready/时长）
+        let item = AVPlayerItem(asset: asset)
+        let player = AVPlayer(playerItem: item)
+        let cts = try? await item.asset.load(.duration)
+        player.pause()
+        if let c = cts, c.isNumeric, c.seconds.isFinite, c.seconds > 0 {
+            return c.seconds
+        }
+        return 0
     }
 }

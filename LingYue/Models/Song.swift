@@ -59,7 +59,7 @@ struct Song: Identifiable, Codable, Hashable {
     }
 
     var formattedDuration: String {
-        guard duration.isFinite, duration > 0 else { return "0:00" }
+        guard duration.isFinite, duration > 0 else { return "--:--" }
         let total = Int(duration)
         return String(format: "%d:%02d", total / 60, total % 60)
     }
