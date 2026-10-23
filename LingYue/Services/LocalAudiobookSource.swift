@@ -79,6 +79,25 @@ struct LocalAudiobookSource {
         return downloaded
     }
 
+    /// 缓存单个在线章节到本地（Documents/Audiobooks）：听过就永久留档，可手动删除。
+    /// 若同名文件已存在则跳过（不重复下载）。
+    static func cacheChapter(from url: URL, name: String) {
+        try? FileManager.default.createDirectory(at: libraryURL, withIntermediateDirectories: true)
+        let ext = url.pathExtension.isEmpty ? "mp3" : url.pathExtension
+        let dest = libraryURL.appendingPathComponent("\(name).\(ext)")
+        guard !FileManager.default.fileExists(atPath: dest.path) else { return }
+        Task {
+            do {
+                let (data, _) = try await URLSession.shared.data(from: url)
+                try? FileManager.default.removeItem(at: dest)
+                try data.write(to: dest)
+                NotificationCenter.default.post(name: libraryChanged, object: nil)
+            } catch {
+                print("缓存章节失败 \(name): \(error)")
+            }
+        }
+    }
+
     /// 删除某个本地有声书文件（App 内滑动删除用），并刷新列表。
     static func delete(_ song: Song) {
         try? FileManager.default.removeItem(at: song.fileURL)

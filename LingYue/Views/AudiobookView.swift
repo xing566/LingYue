@@ -400,6 +400,7 @@ struct BookDetailView: View {
             }
             ForEach(Array(book.sections.enumerated()), id: \.element.id) { idx, song in
                 SongRowView(song: song, showIndex: idx)
+                    .simultaneousGesture(TapGesture().onEnded { _ in cacheChapter(idx) })
             }
         }
         .listStyle(.plain)
@@ -420,6 +421,13 @@ struct BookDetailView: View {
                 }
             }
         }
+    }
+
+    /// 播放在线章节时自动缓存该章到本地（永久保留，可在「本地有声书」手动删除）。
+    private func cacheChapter(_ idx: Int) {
+        guard idx >= 0, idx < book.sections.count else { return }
+        let section = book.sections[idx]
+        LocalAudiobookSource.cacheChapter(from: section.fileURL, name: "\(book.title)-第\(idx + 1)章")
     }
 
     private func downloadBook() {
