@@ -8,13 +8,19 @@ struct SavedPage: Identifiable, Codable {
     var urlString: String
 }
 
-/// 持有 WKWebView 的浏览器模型：持久化缓存、前进/后退/刷新、标题回调。
+/// 持有 WKWebView 的浏览器模型：持久化缓存、前进/后退/刷新、标题回调、广告屏蔽。
 final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
     @Published var canGoBack = false
     @Published var canGoForward = false
     @Published var pageTitle = ""
     let webView: WKWebView
     private var loadedURL: String?
+
+    /// 广告屏蔽开关（存在本地，设置页可改）
+    static let adEnabledKey = "adBlockerEnabled"
+    static var isAdEnabled: Bool {
+        UserDefaults.standard.object(forKey: adEnabledKey) as? Bool ?? true
+    }
 
     override init() {
         let config = WKWebViewConfiguration()
@@ -23,7 +29,35 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         super.init()
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        installAdBlocker()
     }
+
+    /// 编译并挂载广告屏蔽规则（异步，不阻塞页面加载）。
+    private func installAdBlocker() {
+        guard Self.isAdEnabled else { return }
+        WKContentRuleListStore.default().compileContentRuleList(
+            forIdentifier: "LingYueAdBlock",
+            encodedContentRuleList: Self.adRuleJSON
+        ) { [weak self] ruleList, _ in
+            guard let self, let ruleList else { return }
+            DispatchQueue.main.async {
+                self.webView.configuration.userContentController.add(ruleList)
+            }
+        }
+    }
+
+    /// 常见广告网络 / 广告脚本的屏蔽规则。
+    private static let adRuleJSON = """
+    [
+      {"action":{"type":"block"},
+       "trigger":{"url-filter":".*","resource-type":["script","image","media"],
+         "if-domain":["doubleclick.net","googlesyndication.com","googleadservices.com","adnxs.com","adservice.google.com","adsystem.com","advertising.com","scorecardresearch.com","moatads.com","outbrain.com","taboola.com","amazon-adsystem.com","zedo.com","pubmatic.com","rubiconproject.com","criteo.com","adform.net","openx.net","smartadserver.com","adtechus.com"]}},
+      {"action":{"type":"block"},
+       "trigger":{"url-filter":"(doubleclick|googlesyndication|googleadservices|adnxs|adservice|advertising|scorecardresearch|moatads|outbrain|taboola|pubmatic|rubiconproject|criteo|adform|openx|smartadserver|zedo)\\.(net|com|org)","resource-type":["script","image","media"]}},
+      {"action":{"type":"block"},
+       "trigger":{"url-filter":"^https?://[^/]*(/|\\.)(ads?|adserver|advertising|adsystem|sponsor|promo)[^/]*/","resource-type":["script","image"]}}
+    ]
+    """
 
     func load(_ url: URL) {
         let key = url.absoluteString

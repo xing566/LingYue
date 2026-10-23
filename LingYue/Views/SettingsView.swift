@@ -45,6 +45,8 @@ struct SettingsView: View {
             }
 
             Section("关于") {
+                Toggle("网页广告屏蔽", isOn: adBlockBinding)
+                    .tint(.accentColor)
                 NavigationLink {
                     CacheManagementView()
                 } label: {
@@ -76,6 +78,14 @@ struct SettingsView: View {
         Binding(
             get: { library.feedURL ?? "" },
             set: { library.feedURL = $0.isEmpty ? nil : $0 }
+        )
+    }
+
+    /// 网页广告屏蔽开关（存 UserDefaults，浏览器创建时读取生效）。
+    private var adBlockBinding: Binding<Bool> {
+        Binding(
+            get: { BrowserModel.isAdEnabled },
+            set: { UserDefaults.standard.set($0, forKey: BrowserModel.adEnabledKey) }
         )
     }
 }
