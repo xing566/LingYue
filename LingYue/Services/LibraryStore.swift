@@ -132,13 +132,14 @@ final class LibraryStore {
         return pl
     }
 
-    /// 向播放列表添加歌曲（存稳定标识 fileURL.path / 在线 absoluteString，跨重启有效）。
-    func addToPlaylist(_ playlistID: UUID, songs: [Song]) {
+    /// 向播放列表添加歌曲（直接保存歌曲快照，跨重启始终显示）。
+    func addToPlaylist(_ playlistID: UUID, songs newSongs: [Song]) {
         guard let idx = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
         var updated = playlists[idx]
-        for song in songs {
-            let key = songKey(song)
-            if !updated.songKeys.contains(key) { updated.songKeys.append(key) }
+        for song in newSongs {
+            if !updated.songs.contains(where: { $0.fileURL.path == song.fileURL.path }) {
+                updated.songs.append(song)
+            }
         }
         playlists[idx] = updated
         persistPlaylists()
@@ -147,7 +148,7 @@ final class LibraryStore {
     func removeSong(_ song: Song, from playlistID: UUID) {
         guard let idx = playlists.firstIndex(where: { $0.id == playlistID }) else { return }
         var updated = playlists[idx]
-        updated.songKeys.removeAll { $0 == songKey(song) }
+        updated.songs.removeAll { $0.fileURL.path == song.fileURL.path }
         playlists[idx] = updated
         persistPlaylists()
     }
@@ -157,22 +158,9 @@ final class LibraryStore {
         persistPlaylists()
     }
 
-    /// 播放列表里的歌曲：按稳定标识在本地曲库 + 在线曲库中解析。
+    /// 播放列表里的歌曲：直接返回已保存的快照。
     func songs(in playlist: Playlist) -> [Song] {
-        let all = allSongs
-        return playlist.songKeys.compactMap { key in
-            all.first { songKey($0) == key }
-        }
-    }
-
-    /// 本地曲库 + 在线曲库合并，供播放列表解析。
-    private var allSongs: [Song] {
-        songs + onlineSongs
-    }
-
-    /// 歌曲的稳定标识：本地用文件路径，在线用绝对 URL 字符串。
-    private func songKey(_ song: Song) -> String {
-        song.source == .streaming ? song.fileURL.absoluteString : song.fileURL.path
+        playlist.songs
     }
 
     // MARK: - 持久化
