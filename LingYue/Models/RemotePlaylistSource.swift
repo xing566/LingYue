@@ -20,6 +20,7 @@ struct RemotePlaylistSource: MusicSource {
             return items.enumerated().compactMap { idx, item in
                 guard let u = Self.encode(item.url) else { return nil }
                 return Song(
+                    id: Song.stableID(from: u.absoluteString),
                     title: item.title,
                     artist: item.artist ?? "未知艺术家",
                     album: "在线歌单",
@@ -53,7 +54,8 @@ struct RemotePlaylistSource: MusicSource {
         ]
         return items.compactMap { title, url in
             guard let u = encode(url) else { return nil }
-            return Song(title: title, artist: "公版音乐", album: "在线·默认歌单",
+            return Song(id: Song.stableID(from: u.absoluteString),
+                        title: title, artist: "公版音乐", album: "在线·默认歌单",
                         artworkURL: nil, fileURL: u, duration: 0, source: .streaming)
         }
     }

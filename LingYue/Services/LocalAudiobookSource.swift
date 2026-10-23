@@ -112,7 +112,8 @@ struct LocalAudiobookSource {
             duration = d.seconds
         }
         let creation = (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
-        return Song(title: url.deletingPathExtension().lastPathComponent,
+        return Song(id: Song.stableID(from: url.path),
+                    title: url.deletingPathExtension().lastPathComponent,
                     artist: "本地有声书",
                     album: "本地有声书",
                     fileURL: url,

@@ -17,7 +17,8 @@ struct FeedSource {
             let rawURL = enclosure ?? mediaURL
             guard let rawURL, !rawURL.isEmpty,
                   let u = RemotePlaylistSource.encode(unescape(rawURL)) else { continue }
-            songs.append(Song(title: unescape(title ?? "章节"),
+            songs.append(Song(id: Song.stableID(from: u.absoluteString),
+                              title: unescape(title ?? "章节"),
                               artist: "有声书",
                               album: "有声书",
                               artworkURL: nil,

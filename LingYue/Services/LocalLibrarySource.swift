@@ -45,11 +45,12 @@ struct LocalLibrarySource: MusicSource {
         return songs.sorted { $0.dateAdded > $1.dateAdded }
     }
 
-    /// 从单个文件构建 Song，并提取元数据
+    /// 从单个文件构建 Song，并提取元数据（ID 由文件路径稳定生成，保证重启后播放列表引用不失效）
     func makeSong(from fileURL: URL) async -> Song? {
         let meta = await extractMetadata(from: fileURL)
         let creation = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
         return Song(
+            id: Song.stableID(from: fileURL.path),
             title: meta.title,
             artist: meta.artist,
             album: meta.album,
