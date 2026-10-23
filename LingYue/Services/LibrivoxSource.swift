@@ -38,7 +38,10 @@ enum LibrivoxSource {
             let title = b.title?.value ?? ""
             guard !title.isEmpty else { continue }
             let rss = URL(string: b.url_rss?.value ?? "https://librivox.org/rss/\(b.id ?? "")")
-            let sections = await (rss.flatMap { await FeedSource.fetchChapters(from: $0) } ?? [])
+            var sections: [Song] = []
+            if let rss {
+                sections = await FeedSource.fetchChapters(from: rss)
+            }
             guard !sections.isEmpty else { continue }
             result.append(Audiobook(title: title,
                                     author: authorName(b.authors),
