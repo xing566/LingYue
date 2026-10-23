@@ -1,10 +1,21 @@
 import SwiftUI
+import AVKit
 
 /// 全屏播放页（以 sheet 呈现）
 struct NowPlayingView: View {
     @Environment(PlayerManager.self) private var player
     @Environment(\.dismiss) private var dismiss
     @State private var draggingTime: Double? = nil
+
+    /// 常见视频扩展名（本地多格式解码）
+    private static let videoExtensions: Set<String> = [
+        "mp4", "m4v", "mov", "mkv", "avi", "webm", "flv", "ts", "3gp", "mpg", "mpeg", "wmv", "ogv"
+    ]
+
+    private var isVideo: Bool {
+        guard let url = player.currentSong?.fileURL else { return false }
+        return Self.videoExtensions.contains(url.pathExtension.lowercased())
+    }
 
     var body: some View {
         @Bindable var player = player
@@ -40,11 +51,19 @@ struct NowPlayingView: View {
 
                 Spacer()
 
-                // 封面
+                // 封面 / 视频画面
                 if let song = player.currentSong {
-                    ArtworkView(song: song, size: 320)
-                        .shadow(color: .black.opacity(0.6), radius: 30, x: 0, y: 12)
-                        .padding(.bottom, 40)
+                    if isVideo, let av = player.avPlayer {
+                        VideoPlayer(player: av)
+                            .frame(width: 340, height: 192)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .shadow(color: .black.opacity(0.6), radius: 24, x: 0, y: 10)
+                            .padding(.bottom, 30)
+                    } else {
+                        ArtworkView(song: song, size: 320)
+                            .shadow(color: .black.opacity(0.6), radius: 30, x: 0, y: 12)
+                            .padding(.bottom, 40)
+                    }
 
                     // 标题 / 歌手
                     VStack(spacing: 6) {

@@ -21,6 +21,9 @@ final class PlayerManager {
     private(set) var queue: [Song] = []
 
     private var player: AVPlayer?
+
+    /// 供视频播放界面使用的 AVPlayer（与音频播放同一实例；仅在有视频文件时显示画面）。
+    var avPlayer: AVPlayer? { player }
     private var timeObserver: Any?
     private let source: MusicSource
     private let nowPlaying = NowPlayingCenter()
