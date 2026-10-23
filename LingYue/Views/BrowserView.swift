@@ -9,7 +9,7 @@ struct SavedPage: Identifiable, Codable {
 }
 
 /// 单个浏览器标签页：各自持有 WKWebView、标题与导航状态。
-final class BrowserTab: NSObject, ObservableObject, WKNavigationDelegate {
+final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate {
     let id = UUID()
     @Published var title = ""
     @Published var canGoBack = false
