@@ -8,13 +8,16 @@ struct AudiobookView: View {
     @State private var query = ""
     @State private var books: [Audiobook] = []
     @State private var localSongs: [Song] = []
+    @State private var novels: [Novel] = []
     @State private var isSearching = false
     @State private var errorText: String?
     @State private var importPresented = false
+    @State private var importTxtPresented = false
 
     enum Segment: String, CaseIterable {
         case online = "在线小说"
         case local = "本地有声书"
+        case localRead = "本地阅读"
     }
 
     var body: some View {
@@ -28,7 +31,9 @@ struct AudiobookView: View {
             .padding(.horizontal)
             .padding(.top, 6)
 
-            if segment == .online { onlinePane } else { localPane }
+            if segment == .online { onlinePane }
+            else if segment == .local { localPane }
+            else { localReadPane }
         }
         .navigationTitle("听小说")
         .toolbar {
@@ -36,6 +41,12 @@ struct AudiobookView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { importPresented = true } label: {
                         Label("导入有声书", systemImage: "plus.circle")
+                    }
+                }
+            } else if segment == .localRead {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { importTxtPresented = true } label: {
+                        Label("导入TXT", systemImage: "plus.circle")
                     }
                 }
             }
@@ -52,13 +63,29 @@ struct AudiobookView: View {
                 }
             }
         }
+        .fileImporter(
+            isPresented: $importTxtPresented,
+            allowedContentTypes: [.plainText, .text],
+            allowsMultipleSelection: true
+        ) { result in
+            if case .success(let urls) = result {
+                let added = LocalNovelSource.importFiles(from: urls)
+                novels = (novels + added).sorted { $0.name < $1.name }
+            }
+        }
         .searchable(text: $query,
                     placement: .navigationBarDrawer(displayMode: .always),
                     prompt: "搜索有声书标题 / 作者")
         .onSubmit(of: .search) { search() }
-        .task { localSongs = await LocalAudiobookSource.scan() }
+        .task {
+            localSongs = await LocalAudiobookSource.scan()
+            novels = LocalNovelSource.scan()
+        }
         .navigationDestination(for: Audiobook.self) { book in
             BookDetailView(book: book)
+        }
+        .navigationDestination(for: Novel.self) { novel in
+            NovelReaderView(novel: novel)
         }
     }
 
@@ -147,6 +174,37 @@ struct AudiobookView: View {
                     }
                     ForEach(localSongs) { song in
                         SongRowView(song: song)
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: 本地阅读
+
+    private var localReadPane: some View {
+        Group {
+            if novels.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "text.book.closed").font(.system(size: 44)).foregroundColor(.secondary)
+                    Text("还没有本地 TXT 小说\n点击右上角「导入TXT」添加 .txt 文件\n阅读时支持上下滑动、调节字号与明暗主题")
+                        .font(.system(size: 13)).foregroundColor(.secondary).multilineTextAlignment(.center)
+                }
+                .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(novels) { novel in
+                        NavigationLink(value: novel) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "doc.text").font(.system(size: 26)).foregroundColor(.accentColor)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(novel.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                                    Text("TXT 小说 · 点击阅读").font(.system(size: 12)).foregroundColor(.secondary)
+                                }
+                            }
+                        }
                     }
                 }
                 .listStyle(.plain)

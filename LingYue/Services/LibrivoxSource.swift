@@ -8,13 +8,13 @@ enum LibrivoxSource {
 
     struct Response: Decodable {
         struct Book: Decodable {
-            let title: FlexString?
-            let author: FlexString?
+            let title: OnlineSearchSource.FlexString?
+            let author: OnlineSearchSource.FlexString?
             let sections: [Section]?
         }
         struct Section: Decodable {
-            let title: FlexString?
-            let url: FlexString?
+            let title: OnlineSearchSource.FlexString?
+            let url: OnlineSearchSource.FlexString?
         }
         let books: [Book]?
     }
