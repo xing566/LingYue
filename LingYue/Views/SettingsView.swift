@@ -34,6 +34,25 @@ struct SettingsView: View {
             }
 
             Section {
+                let plFile = LocalLibrarySource.documentsURL.appendingPathComponent("playlists.json")
+                LabeledContent("播放列表数量", value: "\(library.playlists.count)")
+                LabeledContent("playlists.json 大小", value: {
+                    let size = (try? FileManager.default.attributesOfItem(atPath: plFile.path)[.size] as? Int) ?? 0
+                    return size > 0 ? "\(size) 字节" : "文件不存在"
+                }())
+                ForEach(library.playlists) { pl in
+                    LabeledContent(pl.name, value: "内存 \(pl.songs.count) 首")
+                }
+                Button {
+                    library.rescanPlaylistsFromDisk()
+                } label: {
+                    Label("重新从磁盘加载播放列表", systemImage: "arrow.clockwise")
+                }
+            } header: {
+                Text("播放列表诊断（排查用）")
+            }
+
+            Section {
                 TextField("https://…/playlist.json", text: feedBinding)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()

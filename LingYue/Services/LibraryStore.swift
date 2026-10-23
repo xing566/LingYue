@@ -205,6 +205,14 @@ final class LibraryStore {
         }
     }
 
+    /// 调试用：从磁盘重新加载播放列表（在设置页检查持久化实际内容）。
+    func rescanPlaylistsFromDisk() {
+        if let data = try? Data(contentsOf: playlistsFileURL),
+           let decoded = try? JSONDecoder().decode([Playlist].self, from: data) {
+            playlists = decoded
+        }
+    }
+
     /// 清洗单曲用于 JSON 持久化：
     /// - 把非有限时长钳制为 0（否则 JSONEncoder 对 NaN/Inf 直接抛错，导致整个保存被跳过）
     /// - 剥离封面图（体积大，且播放在加载时从曲库重新挂回），保证 playlists.json 小而稳定
