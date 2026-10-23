@@ -58,25 +58,6 @@ struct Song: Identifiable, Codable, Hashable {
         title.isEmpty ? fileURL.lastPathComponent : title
     }
 
-    /// 由字符串（通常是文件路径或在线标识）稳定生成 UUID。
-    /// 同一路径每次启动得到相同 ID，保证播放列表等引用在重启后仍有效。
-    static func stableID(from key: String) -> UUID {
-        // 双 64 位 FNV-1a（偏移量不同），结果稳定、极简、不可能崩溃。
-        var h1: UInt64 = 0xcbf29ce484222325
-        var h2: UInt64 = 0x84222325cbf29ce4
-        for byte in key.utf8 {
-            h1 ^= UInt64(byte); h1 &*= 0x100000001b3
-            h2 ^= UInt64(byte); h2 &*= 0x100000001b3
-        }
-        let u = (
-            UInt8((h1 >> 56) & 0xff), UInt8((h1 >> 48) & 0xff), UInt8((h1 >> 40) & 0xff), UInt8((h1 >> 32) & 0xff),
-            UInt8((h1 >> 24) & 0xff), UInt8((h1 >> 16) & 0xff), UInt8(((h1 >> 8) & 0x0f) | 0x40), UInt8(h1 & 0xff),
-            UInt8(((h2 >> 56) & 0x3f) | 0x80), UInt8((h2 >> 48) & 0xff), UInt8((h2 >> 40) & 0xff), UInt8((h2 >> 32) & 0xff),
-            UInt8((h2 >> 24) & 0xff), UInt8((h2 >> 16) & 0xff), UInt8((h2 >> 8) & 0xff), UInt8(h2 & 0xff)
-        )
-        return UUID(uuid: u)
-    }
-
     var formattedDuration: String {
         guard duration.isFinite, duration > 0 else { return "0:00" }
         let total = Int(duration)

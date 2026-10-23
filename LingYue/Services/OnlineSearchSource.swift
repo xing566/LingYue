@@ -76,8 +76,7 @@ enum OnlineSearchSource {
         guard let file = meta.files.first(where: { isPlayable($0) }) else { return nil }
         let base = "https://archive.org/download/\(identifier)/"
         guard let url = RemotePlaylistSource.encode(base + file.name) else { return nil }
-        return Song(id: Song.stableID(from: "ia-\(identifier)-\(file.name)"),
-                    title: title,
+        return Song(title: title,
                     artist: creator ?? "网络搜索",
                     album: "在线搜索",
                     artworkURL: nil,
