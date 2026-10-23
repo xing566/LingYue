@@ -223,6 +223,16 @@ final class LibraryStore {
         return s
     }
 
+    /// 清空曲库与播放列表数据（保留音频文件本身）。
+    /// 用于清掉历史残留的歌曲记录/旧播放列表，让 App 从当前实际存在的文件重新开始。
+    func resetLibraryData() {
+        songs = []
+        playlists = []
+        onlineSongs = []
+        try? FileManager.default.removeItem(at: songsFileURL)
+        try? FileManager.default.removeItem(at: playlistsFileURL)
+    }
+
     /// 按文件 URL 去重，保留最新的一条
     private func dedupe(_ list: [Song]) -> [Song] {
         var seen = Set<String>()

@@ -72,6 +72,13 @@ struct SettingsView: View {
                     Label("缓存管理", systemImage: "internaldrive")
                 }
                 Button {
+                    library.resetLibraryData()
+                    Task { await library.rescan() }
+                } label: {
+                    Label("清空曲库数据（保留音频文件）", systemImage: "trash")
+                        .foregroundColor(.red)
+                }
+                Button {
                     aboutPresented = true
                 } label: {
                     Label("关于聆乐", systemImage: "music.note")
