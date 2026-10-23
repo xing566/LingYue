@@ -55,6 +55,11 @@ struct LocalNovelSource {
         return added
     }
 
+    /// 删除某本本地 TXT 小说（App 内滑动删除用）。
+    static func delete(_ novel: Novel) {
+        try? FileManager.default.removeItem(at: novel.fileURL)
+    }
+
     /// 读取 TXT 文本：依次尝试 UTF-8 / UTF-16 / GBK(GB18030)，兼容中文常见编码。
     static func readText(from url: URL) -> String {
         guard let data = try? Data(contentsOf: url) else { return "" }

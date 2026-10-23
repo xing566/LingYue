@@ -324,6 +324,10 @@ struct AudiobookView: View {
                     ForEach(localSongs) { song in
                         SongRowView(song: song)
                     }
+                    .onDelete { offsets in
+                        for i in offsets { LocalAudiobookSource.delete(localSongs[i]) }
+                        localSongs.remove(atOffsets: offsets)
+                    }
                 }
                 .listStyle(.plain)
             }
@@ -354,6 +358,10 @@ struct AudiobookView: View {
                                 }
                             }
                         }
+                    }
+                    .onDelete { offsets in
+                        for i in offsets { LocalNovelSource.delete(novels[i]) }
+                        novels.remove(atOffsets: offsets)
                     }
                 }
                 .listStyle(.plain)

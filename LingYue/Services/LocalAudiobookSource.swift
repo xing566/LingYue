@@ -76,6 +76,12 @@ struct LocalAudiobookSource {
         return downloaded
     }
 
+    /// 删除某个本地有声书文件（App 内滑动删除用），并刷新列表。
+    static func delete(_ song: Song) {
+        try? FileManager.default.removeItem(at: song.fileURL)
+        NotificationCenter.default.post(name: libraryChanged, object: nil)
+    }
+
     private static func makeSong(from url: URL) async -> Song? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
         let asset = AVURLAsset(url: url)
