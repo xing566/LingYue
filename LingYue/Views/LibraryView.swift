@@ -204,13 +204,17 @@ struct LibraryView: View {
     private var artistsList: some View {
         List {
             ForEach(library.artists, id: \.name) { artist in
-                HStack(spacing: 12) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(.secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(artist.name).font(.system(size: 16, weight: .medium))
-                        Text("\(artist.songs.count) 首歌曲").font(.system(size: 13)).foregroundColor(.secondary)
+                NavigationLink {
+                    ArtistDetailView(name: artist.name, songs: artist.songs)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(artist.name).font(.system(size: 16, weight: .medium))
+                            Text("\(artist.songs.count) 首歌曲").font(.system(size: 13)).foregroundColor(.secondary)
+                        }
                     }
                 }
             }

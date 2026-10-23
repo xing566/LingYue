@@ -44,7 +44,7 @@ struct PlaylistDetailView: View {
                             ForEach(Array(songs.enumerated()), id: \.element.id) { idx, song in
                                 SongRowView(song: song, showIndex: idx, trailing: AnyView(
                                     Button {
-                                        library.removeSong(song.id, from: pl.id)
+                                        library.removeSong(song, from: pl.id)
                                     } label: {
                                         Image(systemName: "xmark.circle.fill")
                                             .foregroundColor(.secondary)
@@ -119,7 +119,8 @@ struct AddToPlaylistSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("添加") {
-                        library.addToPlaylist(playlistID, songIDs: Array(selected))
+                        let chosen = library.songs.filter { selected.contains($0.id) }
+                        library.addToPlaylist(playlistID, songs: chosen)
                         dismiss()
                     }
                     .disabled(selected.isEmpty)

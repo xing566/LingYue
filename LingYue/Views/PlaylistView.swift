@@ -20,7 +20,7 @@ struct PlaylistView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(playlist.name)
                                         .font(.system(size: 16, weight: .medium))
-                                    Text("\(playlist.songIDs.count) 首歌曲")
+                                    Text("\(playlist.songKeys.count) 首歌曲")
                                         .font(.system(size: 13))
                                         .foregroundColor(.secondary)
                                 }
