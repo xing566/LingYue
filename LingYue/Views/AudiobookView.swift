@@ -202,11 +202,11 @@ struct AudiobookView: View {
     private var webOnlinePane: some View {
         Group {
             if let url = webURL {
-                WebBrowserView(url: url)
+                BrowserView(initialURL: url)
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "safari").font(.system(size: 44)).foregroundColor(.secondary)
-                    Text("输入关键词后按搜索，在网页中找可下载的有声书/小说资源\n（打开内置浏览器，可浏览 / 返回）")
+                    Text("输入关键词后按搜索，在网页中找可下载的有声书/小说资源\n（内置浏览器，可浏览 / 返回 / 缓存到本地）")
                         .font(.system(size: 13)).foregroundColor(.secondary).multilineTextAlignment(.center)
                 }
                 .padding(30).frame(maxWidth: .infinity, maxHeight: .infinity)

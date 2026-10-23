@@ -121,11 +121,11 @@ struct OnlineSearchView: View {
     private var webPane: some View {
         Group {
             if let url = webURL {
-                WebBrowserView(url: url)
+                BrowserView(initialURL: url)
             } else {
                 VStack(spacing: 10) {
                     Image(systemName: "safari").font(.system(size: 44)).foregroundColor(.secondary)
-                    Text("输入关键词后按搜索，在网页中查找结果\n（打开内置浏览器，可浏览 / 返回）")
+                    Text("输入关键词后按搜索，在网页中查找结果\n（打开内置浏览器，可浏览 / 返回 / 缓存到本地）")
                         .font(.system(size: 13)).foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
                 }
