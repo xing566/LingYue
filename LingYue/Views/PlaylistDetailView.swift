@@ -108,6 +108,15 @@ struct AddToPlaylistSheet: View {
             .navigationTitle("选择歌曲")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(selected.count == library.songs.count ? "全不选" : "全选") {
+                        if selected.count == library.songs.count {
+                            selected.removeAll()
+                        } else {
+                            selected = Set(library.songs.map { $0.id })
+                        }
+                    }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("添加") {
                         library.addToPlaylist(playlistID, songIDs: Array(selected))
