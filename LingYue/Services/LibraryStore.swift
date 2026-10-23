@@ -158,9 +158,14 @@ final class LibraryStore {
         persistPlaylists()
     }
 
-    /// 播放列表里的歌曲：直接返回已保存的快照。
+    /// 播放列表里的歌曲：返回已保存的快照，并从曲库按路径重新挂回封面/最新元数据。
     func songs(in playlist: Playlist) -> [Song] {
-        playlist.songs
+        playlist.songs.map { snapshot in
+            if let fresh = songs.first(where: { $0.fileURL.path == snapshot.fileURL.path }) {
+                return fresh
+            }
+            return snapshot
+        }
     }
 
     // MARK: - 持久化
@@ -177,13 +182,37 @@ final class LibraryStore {
     }
 
     private func persistSongs() {
-        guard let data = try? JSONEncoder().encode(songs) else { return }
-        try? data.write(to: songsFileURL, options: .atomic)
+        do {
+            let clean = songs.map { sanitizedForPersistence($0) }
+            let data = try JSONEncoder().encode(clean)
+            try data.write(to: songsFileURL, options: .atomic)
+        } catch {
+            print("保存曲库失败: \(error)")
+        }
     }
 
     private func persistPlaylists() {
-        guard let data = try? JSONEncoder().encode(playlists) else { return }
-        try? data.write(to: playlistsFileURL, options: .atomic)
+        do {
+            let clean = playlists.map { pl in
+                Playlist(id: pl.id, name: pl.name,
+                         songs: pl.songs.map { sanitizedForPersistence($0) },
+                         createdAt: pl.createdAt)
+            }
+            let data = try JSONEncoder().encode(clean)
+            try data.write(to: playlistsFileURL, options: .atomic)
+        } catch {
+            print("保存播放列表失败: \(error)")
+        }
+    }
+
+    /// 清洗单曲用于 JSON 持久化：
+    /// - 把非有限时长钳制为 0（否则 JSONEncoder 对 NaN/Inf 直接抛错，导致整个保存被跳过）
+    /// - 剥离封面图（体积大，且播放在加载时从曲库重新挂回），保证 playlists.json 小而稳定
+    private func sanitizedForPersistence(_ song: Song) -> Song {
+        var s = song
+        if !s.duration.isFinite || s.duration.isNaN || s.duration < 0 { s.duration = 0 }
+        s.artworkData = nil
+        return s
     }
 
     /// 按文件 URL 去重，保留最新的一条
