@@ -19,11 +19,12 @@ struct CacheManagementView: View {
                 Button {
                     clearWebCache()
                 } label: {
-                    if clearing {
-                        HStack { ProgressView(); Text("清除中…") }
-                    } else {
-                        Label("清除网页缓存", systemImage: "trash")
-                            .foregroundColor(.red)
+                    Group {
+                        if clearing {
+                            HStack { ProgressView(); Text("清除中…") }
+                        } else {
+                            Label("清除网页缓存", systemImage: "trash").foregroundColor(.red)
+                        }
                     }
                 }
                 .disabled(clearing)
@@ -36,20 +37,24 @@ struct CacheManagementView: View {
                 Text("清除网页缓存不影响「缓存书签」里保存的页面（书签单独存在本地，会保留）。")
             }
 
-            Section("缓存书签") {
+            Section {
                 HStack {
                     Label("保存的页面", systemImage: "bookmark")
                     Spacer()
                     Text("\(BrowserStore.load().count) 个 · 清除时保留").foregroundColor(.secondary)
                 }
+            } header: {
+                Text("缓存书签")
             }
 
-            Section("本地内容（下载 / 导入）") {
+            Section {
                 HStack {
                     Label("本地占用", systemImage: "doc")
                     Spacer()
                     Text(byteString(localBytes)).foregroundColor(.secondary)
                 }
+            } header: {
+                Text("本地内容（下载 / 导入）")
             } footer: {
                 Text("本地有声书、文本、视频、音乐可在对应页面滑动删除；下载整本的章节在「小说→本地有声书」里删除。")
             }
