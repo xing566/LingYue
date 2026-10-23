@@ -18,7 +18,8 @@ final class SpeechDelegate: NSObject, ObservableObject, AVSpeechSynthesizerDeleg
 struct NovelReaderView: View {
     let novel: Novel
     @State private var content = ""
-    @State private var isLoading = true
+    @State private var isLoading = false
+    @State private var loadProgress: Double = 0
     @State private var fontSize: CGFloat = 18
     @State private var isDark = true
     @State private var rate: Float = 0.5
@@ -43,25 +44,28 @@ struct NovelReaderView: View {
         VStack(spacing: 0) {
             speakBar
 
-            ScrollView {
-                if isLoading {
-                    VStack {
-                        Spacer()
-                        ProgressView("正在加载文本…")
-                            .tint(.secondary)
-                        Spacer()
-                    }
-                    .frame(minHeight: 300)
-                } else {
-                    Text(content.isEmpty ? "（无法读取或文件为空）" : content)
-                        .font(.system(size: fontSize))
-                        .lineSpacing(6)
-                        .foregroundColor(isDark ? Color(red: 0.92, green: 0.90, blue: 0.85) : Color(red: 0.15, green: 0.13, blue: 0.11))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 24)
-                        .textSelection(.enabled)
+            // 全文仍在后台加载时，顶部显示进度条 + 百分比
+            if isLoading {
+                VStack(spacing: 4) {
+                    ProgressView(value: loadProgress)
+                        .tint(.accentColor)
+                    Text("正在加载全文… \(Int(loadProgress * 100))%")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
+            }
+
+            ScrollView {
+                Text(content.isEmpty ? "（无法读取或文件为空）" : content)
+                    .font(.system(size: fontSize))
+                    .lineSpacing(6)
+                    .foregroundColor(isDark ? Color(red: 0.92, green: 0.90, blue: 0.85) : Color(red: 0.15, green: 0.13, blue: 0.11))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
+                    .textSelection(.enabled)
             }
         }
         .background((isDark ? Color(red: 0.06, green: 0.07, blue: 0.10) : Color(red: 0.96, green: 0.94, blue: 0.88))
@@ -83,19 +87,32 @@ struct NovelReaderView: View {
                 }
             }
         }
-        .task { await loadText() }
+        .task { loadText() }
         .onDisappear { stopSpeak() }
     }
 
-    /// 在后台线程读取文件（避免大文件阻塞主线程导致界面卡死），完成后回主线程显示。
-    private func loadText() async {
+    /// 后台加载：先读开头一小部分立刻显示，再分块读取全文并回报百分比。
+    private func loadText() {
         let url = novel.fileURL
         isLoading = true
-        let text = await Task.detached(priority: .userInitiated) {
-            LocalNovelSource.readText(from: url)
-        }.value
-        content = text
-        isLoading = false
+        loadProgress = 0
+        Task.detached(priority: .userInitiated) {
+            // 1) 先读开头，快速上屏
+            let preview = LocalNovelSource.readTextPreview(from: url)
+            DispatchQueue.main.async {
+                self.content = preview
+            }
+            // 2) 后台继续读全文 + 进度
+            let full = LocalNovelSource.readTextChunked(from: url) { p in
+                DispatchQueue.main.async {
+                    self.loadProgress = p
+                }
+            }
+            DispatchQueue.main.async {
+                self.content = full
+                self.isLoading = false
+            }
+        }
     }
 
     // MARK: 朗读控制条

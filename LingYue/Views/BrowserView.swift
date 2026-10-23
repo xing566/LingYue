@@ -8,19 +8,13 @@ struct SavedPage: Identifiable, Codable {
     var urlString: String
 }
 
-/// 持有 WKWebView 的浏览器模型：持久化缓存、前进/后退/刷新、标题回调、广告屏蔽。
-final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
+/// 单个浏览器标签页：各自持有 WKWebView、标题与导航状态。
+final class BrowserTab: NSObject, ObservableObject, WKNavigationDelegate {
+    let id = UUID()
+    @Published var title = ""
     @Published var canGoBack = false
     @Published var canGoForward = false
-    @Published var pageTitle = ""
     let webView: WKWebView
-    private var loadedURL: String?
-
-    /// 广告屏蔽开关（存在本地，设置页可改）
-    static let adEnabledKey = "adBlockerEnabled"
-    static var isAdEnabled: Bool {
-        UserDefaults.standard.object(forKey: adEnabledKey) as? Bool ?? true
-    }
 
     override init() {
         let config = WKWebViewConfiguration()
@@ -29,22 +23,88 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         super.init()
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        installAdBlocker()
     }
 
-    /// 编译并挂载广告屏蔽规则（异步，不阻塞页面加载）。
-    private func installAdBlocker() {
-        guard Self.isAdEnabled else { return }
-        WKContentRuleListStore.default().compileContentRuleList(
-            forIdentifier: "LingYueAdBlock",
-            encodedContentRuleList: Self.adRuleJSON
-        ) { [weak self] ruleList, _ in
-            guard let self, let ruleList else { return }
-            DispatchQueue.main.async {
-                self.webView.configuration.userContentController.add(ruleList)
+    func installAdBlocker(_ list: WKContentRuleList?) {
+        guard let list else { return }
+        webView.configuration.userContentController.add(list)
+    }
+
+    func load(_ url: URL) {
+        webView.load(URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 30))
+    }
+    func goBack() { webView.goBack() }
+    func goForward() { webView.goForward() }
+    func reload() { webView.reload() }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        title = webView.title ?? title
+        canGoBack = webView.canGoBack
+        canGoForward = webView.canGoForward
+    }
+}
+
+/// 浏览器标签管理器：管理多个标签页、当前激活标签与导航控制。
+final class BrowserModel: ObservableObject {
+    @Published var tabs: [BrowserTab] = []
+    @Published var activeIndex = 0
+
+    var activeTab: BrowserTab? { tabs.indices.contains(activeIndex) ? tabs[activeIndex] : nil }
+    var pageTitle: String { activeTab?.title ?? "" }
+    var canGoBack: Bool { activeTab?.canGoBack ?? false }
+    var canGoForward: Bool { activeTab?.canGoForward ?? false }
+    var activeURL: URL? { activeTab?.webView.url }
+
+    /// 广告屏蔽开关（存在本地，设置页可改）
+    static let adEnabledKey = "adBlockerEnabled"
+    static var isAdEnabled: Bool {
+        UserDefaults.standard.object(forKey: adEnabledKey) as? Bool ?? true
+    }
+    private static var adList: WKContentRuleList?
+
+    init() {
+        addTab(initialURL: nil)
+        if Self.isAdEnabled {
+            WKContentRuleListStore.default().compileContentRuleList(
+                forIdentifier: "LingYueAdBlock",
+                encodedContentRuleList: Self.adRuleJSON
+            ) { [weak self] list, _ in
+                guard let list else { return }
+                Self.adList = list
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    for tab in self.tabs { tab.installAdBlocker(list) }
+                }
             }
         }
     }
+
+    @discardableResult
+    func addTab(initialURL: URL?) -> BrowserTab {
+        let tab = BrowserTab()
+        if let list = Self.adList { tab.installAdBlocker(list) }
+        if let url = initialURL { tab.load(url) }
+        tabs.append(tab)
+        activeIndex = tabs.count - 1
+        return tab
+    }
+
+    func switchTo(_ tab: BrowserTab) {
+        if let i = tabs.firstIndex(where: { $0.id == tab.id }) { activeIndex = i }
+    }
+
+    func closeTab(_ tab: BrowserTab) {
+        guard let i = tabs.firstIndex(where: { $0.id == tab.id }), tabs.count > 1 else { return }
+        tabs.remove(at: i)
+        if activeIndex >= tabs.count { activeIndex = max(0, tabs.count - 1) }
+        else if activeIndex == i { activeIndex = min(i, tabs.count - 1) }
+    }
+
+    // 导航控制（作用于当前标签）
+    func load(_ url: URL) { activeTab?.load(url) }
+    func goBack() { activeTab?.goBack() }
+    func goForward() { activeTab?.goForward() }
+    func reload() { activeTab?.reload() }
 
     /// 常见广告网络 / 广告脚本的屏蔽规则。
     private static let adRuleJSON = """
@@ -58,33 +118,28 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
        "trigger":{"url-filter":"^https?://[^/]*(/|\\.)(ads?|adserver|advertising|adsystem|sponsor|promo)[^/]*/","resource-type":["script","image"]}}
     ]
     """
-
-    func load(_ url: URL) {
-        let key = url.absoluteString
-        guard loadedURL != key else { return }
-        loadedURL = key
-        webView.load(URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 30))
-    }
-
-    func goBack() { webView.goBack() }
-    func goForward() { webView.goForward() }
-    func reload() { webView.reload() }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        canGoBack = webView.canGoBack
-        canGoForward = webView.canGoForward
-        if let t = webView.title, !t.isEmpty { pageTitle = t }
-    }
 }
 
-/// 把模型里的 WKWebView 挂到 SwiftUI。
-struct BrowserRepresentable: UIViewRepresentable {
+/// 把当前激活标签的 WKWebView 挂到 SwiftUI（切换标签时只显示激活的那个）。
+struct BrowserContainer: UIViewRepresentable {
     @ObservedObject var model: BrowserModel
-    func makeUIView(context: Context) -> WKWebView { model.webView }
-    func updateUIView(_ uiView: WKWebView, context: Context) { }
+    func makeUIView(context: Context) -> UIView { UIView() }
+    func updateUIView(_ uiView: UIView, context: Context) {
+        uiView.subviews.forEach { $0.removeFromSuperview() }
+        guard let tab = model.activeTab else { return }
+        let wv = tab.webView
+        wv.translatesAutoresizingMaskIntoConstraints = false
+        uiView.addSubview(wv)
+        NSLayoutConstraint.activate([
+            wv.leadingAnchor.constraint(equalTo: uiView.leadingAnchor),
+            wv.trailingAnchor.constraint(equalTo: uiView.trailingAnchor),
+            wv.topAnchor.constraint(equalTo: uiView.topAnchor),
+            wv.bottomAnchor.constraint(equalTo: uiView.bottomAnchor)
+        ])
+    }
 }
 
-/// 内置浏览器界面：地址栏 / 前进 / 后退 / 刷新，
+/// 内置浏览器界面：多标签 / 地址栏 / 前进 / 后退 / 刷新，
 /// 网页缓存持久化保存，并提供「缓存列表」查看、重开、删除。
 struct BrowserView: View {
     @StateObject private var model = BrowserModel()
@@ -99,13 +154,15 @@ struct BrowserView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            tabStrip
             addressBar
             ZStack {
-                BrowserRepresentable(model: model)
-                if address.isEmpty && model.pageTitle.isEmpty {
+                BrowserContainer(model: model)
+                if model.activeURL == nil && model.pageTitle.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "safari").font(.system(size: 44)).foregroundColor(.secondary)
-                        Text("输入网址，或从「缓存列表」打开已保存页面").font(.system(size: 13)).foregroundColor(.secondary)
+                        Text("输入网址，或点「+」新开标签页，从「缓存列表」打开已保存页面").font(.system(size: 13)).foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                     }
                 }
             }
@@ -118,12 +175,12 @@ struct BrowserView: View {
                 Button {
                     BrowserStore.append(SavedPage(
                         title: model.pageTitle.isEmpty ? (address.isEmpty ? (initialURL?.absoluteString ?? "页面") : address) : model.pageTitle,
-                        urlString: model.webView.url?.absoluteString ?? initialURL?.absoluteString ?? ""))
+                        urlString: model.activeURL?.absoluteString ?? initialURL?.absoluteString ?? ""))
                     savedPages = BrowserStore.load()
                 } label: {
                     Image(systemName: "bookmark")
                 }
-                .disabled(model.webView.url == nil && initialURL == nil)
+                .disabled(model.activeURL == nil && initialURL == nil)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showCache = true } label: {
@@ -139,10 +196,55 @@ struct BrowserView: View {
             })
         }
         .onAppear {
-            if model.webView.url == nil, let initialURL {
+            if model.activeURL == nil, let initialURL {
                 model.load(initialURL); address = initialURL.absoluteString
             }
         }
+        .onChange(of: model.activeIndex) { syncAddress() }
+        .onChange(of: model.pageTitle) {
+            if let u = model.activeURL { address = u.absoluteString }
+        }
+    }
+
+    /// 顶部标签栏：可切换 / 关闭标签，末尾「+」新建标签。
+    private var tabStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(model.tabs) { tab in
+                    HStack(spacing: 4) {
+                        Button {
+                            model.switchTo(tab)
+                        } label: {
+                            Text(tab.title.isEmpty ? "新标签页" : tab.title)
+                                .font(.system(size: 12))
+                                .lineLimit(1)
+                                .foregroundColor(model.activeTab?.id == tab.id ? .white : .primary)
+                        }
+                        Button {
+                            model.closeTab(tab)
+                        } label: {
+                            Image(systemName: "xmark").font(.system(size: 9))
+                                .foregroundColor(model.activeTab?.id == tab.id ? .white : .secondary)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(model.activeTab?.id == tab.id ? Color.accentColor : Color(.systemGray5))
+                    .clipShape(Capsule())
+                }
+                Button {
+                    model.addTab(initialURL: nil)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.accentColor)
+                        .padding(6)
+                }
+            }
+            .padding(.horizontal, 12)
+        }
+        .padding(.vertical, 6)
+        .background(Color(.systemBackground))
     }
 
     private var addressBar: some View {
@@ -175,6 +277,10 @@ struct BrowserView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .background(Color(.systemBackground))
+    }
+
+    private func syncAddress() {
+        address = model.activeURL?.absoluteString ?? ""
     }
 
     private func go(_ text: String) {

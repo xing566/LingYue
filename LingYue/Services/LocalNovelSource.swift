@@ -68,7 +68,47 @@ struct LocalNovelSource {
     /// 读取 TXT 文本：依次尝试 UTF-8 / UTF-16 / GBK(GB18030)，兼容中文常见编码。
     static func readText(from url: URL) -> String {
         guard let data = try? Data(contentsOf: url) else { return "" }
-        // 去掉 UTF-8 BOM，避免开头出现 \u{FEFF}
+        return decode(data)
+    }
+
+    /// 分块读取 + 进度回调：用于大文件，后台调用，避免一次性读入阻塞。
+    /// - Parameters:
+    ///   - onProgress: 已读字节占比（0…1），在主线程外调用，调用方需自行切回主线程更新 UI。
+    static func readTextChunked(from url: URL, onProgress: @escaping (Double) -> Void) -> String {
+        let fm = FileManager.default
+        let fileSize = (try? fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?
+            .doubleValue ?? 0
+        guard fileSize > 0 else { return readText(from: url) }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return readText(from: url) }
+        defer { try? handle.close() }
+        let chunk = 1_048_576   // 每次 1MB
+        var data = Data()
+        data.reserveCapacity(Int(fileSize))
+        while true {
+            let d = handle.readData(ofLength: chunk)
+            if d.isEmpty { break }
+            data.append(d)
+            onProgress(min(1.0, Double(data.count) / fileSize))
+        }
+        return decode(data)
+    }
+
+    /// 只读取文件开头一小部分（最多 2MB）并解码：用于让大文件「先显示开头」，不阻塞。
+    static func readTextPreview(from url: URL) -> String {
+        let fm = FileManager.default
+        let fileSize = (try? fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?
+            .doubleValue ?? 0
+        let cap = min(Int(fileSize), 2 * 1_048_576)
+        guard cap > 0, let handle = try? FileHandle(forReadingFrom: url) else {
+            return readText(from: url)
+        }
+        defer { try? handle.close() }
+        let data = handle.readData(ofLength: cap)
+        return decode(data)
+    }
+
+    /// 统一解码：去 UTF-8 BOM，按 UTF-8 / UTF-16 / GB18030 / ISO-Latin1 依次尝试。
+    private static func decode(_ data: Data) -> String {
         let body = data.starts(with: [0xEF, 0xBB, 0xBF]) ? data.dropFirst(3) : data[...]
         if let s = String(data: body, encoding: .utf8) { return s }
         if let s = String(data: data, encoding: .utf16) { return s }
