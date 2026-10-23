@@ -86,6 +86,8 @@ struct NovelReaderView: View {
     @State private var tocEntries: [TOCEntry] = []
     @State private var showTOC = false
     @State private var scrollTarget: Int?
+    /// 无中文语音时的提示文案。
+    @State private var voiceHint: String?
 
     /// 可选用的声音包（优先中文，其余按语言归类）
     var availableVoices: [AVSpeechSynthesisVoice] {
@@ -108,6 +110,16 @@ struct NovelReaderView: View {
     var body: some View {
         VStack(spacing: 0) {
             speakBar
+
+            // 无中文语音时给出明确提示（根因：iPhone 未下载中文语音包）
+            if let voiceHint {
+                Text(voiceHint)
+                    .font(.system(size: 12))
+                    .foregroundColor(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+            }
 
             // 全文仍在后台加载时，顶部显示进度条 + 百分比
             if isLoading {
@@ -316,7 +328,7 @@ struct NovelReaderView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "person.wave.2")
-                    Text(selectedVoice?.name ?? "中文")
+                    Text(availableVoices.contains(where: { $0.language.lowercased().hasPrefix("zh") }) ? (selectedVoice?.name ?? "中文") : "无中文语音")
                         .lineLimit(1)
                 }
                 .font(.system(size: 13))
@@ -363,13 +375,23 @@ struct NovelReaderView: View {
 
     private func startSpeak() {
         let text = content.isEmpty ? "（没有可朗读的文本）" : content
-        speech.speak(text, voice: resolveVoice(), rate: rate)
+        doSpeak(text)
     }
 
-    /// 从指定段落开始朗读（点某段正文触发）。
+    /// 从指定段落开始朗读（点某段正文 / 目录条目触发）。
     private func speak(fromParagraph index: Int) {
         guard index >= 0, index < paragraphs.count else { startSpeak(); return }
-        let text = paragraphs[index...].joined(separator: "\n")
+        doSpeak(paragraphs[index...].joined(separator: "\n"))
+    }
+
+    /// 统一朗读入口：若系统里没有任何中文语音，先明确提示，避免静默无声。
+    private func doSpeak(_ text: String) {
+        let hasZh = availableVoices.contains { $0.language.lowercased().hasPrefix("zh") }
+        if !hasZh {
+            voiceHint = "未检测到中文语音：请到 设置→辅助功能→朗读内容→语音 下载「普通话」后重试"
+            return
+        }
+        voiceHint = nil
         speech.speak(text, voice: resolveVoice(), rate: rate)
     }
 
