@@ -3,19 +3,66 @@ import AVFoundation
 import AVFAudio
 import Combine
 
-/// 语音合成控制器：负责朗读状态与代理回调（播放完成/取消时更新 UI）。
+/// 语音合成控制器：**唯一持有** AVSpeechSynthesizer（@StateObject 持久，避免 @State 引用被重建导致无声），
+/// 负责朗读状态、音频会话激活、播放/暂停/停止。
 final class SpeechDelegate: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
+    let synthesizer = AVSpeechSynthesizer()
     @Published var isSpeaking = false
+    @Published var isPaused = false
+
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
+
+    /// 播放一段文本（先停掉旧的）。激活播放音频会话，让静音键下也能出声。
+    func speak(_ text: String, voice: AVSpeechSynthesisVoice?, rate: Float) {
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? AVAudioSession.sharedInstance().setActive(true)
+        synthesizer.stopSpeaking(at: .immediate)
+        isSpeaking = false
+        isPaused = false
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let utt = AVSpeechUtterance(string: trimmed)
+        utt.voice = voice
+        utt.rate = rate
+        synthesizer.speak(utt)
+        isSpeaking = true
+    }
+
+    /// 播放 / 暂停 / 继续
+    func toggle() {
+        if synthesizer.isSpeaking {
+            synthesizer.pauseSpeaking(at: .immediate)
+            isSpeaking = false
+            isPaused = true
+        } else if synthesizer.isPaused {
+            synthesizer.continueSpeaking()
+            isPaused = false
+            isSpeaking = true
+        }
+    }
+
+    /// 停止
+    func stop() {
+        synthesizer.stopSpeaking(at: .immediate)
+        isSpeaking = false
+        isPaused = false
+    }
+
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
+        isPaused = false
     }
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         isSpeaking = false
+        isPaused = false
     }
 }
 
 /// TXT 小说阅读器：上下滑动（滚动）阅读，支持调节字号、明暗主题，
-/// 以及「朗读」功能（切换声音包 / 语速 / 播放暂停停止）。
+/// 以及「朗读」功能（切换声音包 / 语速 / 播放暂停停止 / 点段落从此处开始朗读）。
 struct NovelReaderView: View {
     let novel: Novel
     @State private var content = ""
@@ -27,7 +74,6 @@ struct NovelReaderView: View {
     @State private var rate: Float = 0.5
     @State private var voiceID: String = UserDefaults.standard.string(forKey: "ttsVoice") ?? ""
     @StateObject private var speech = SpeechDelegate()
-    @State private var synthesizer = AVSpeechSynthesizer()
 
     /// 可选用的声音包（优先中文，其余按语言归类）
     var availableVoices: [AVSpeechSynthesisVoice] {
@@ -76,13 +122,14 @@ struct NovelReaderView: View {
                         .textSelection(.enabled)
                 } else {
                     LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, para in
+                        ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, para in
                             Text(para)
                                 .font(.system(size: fontSize))
                                 .lineSpacing(6)
                                 .foregroundColor(bodyColor)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
+                                .onTapGesture { speak(fromParagraph: index) }
                         }
                     }
                     .padding(.horizontal, 20)
@@ -224,28 +271,23 @@ struct NovelReaderView: View {
     }
 
     private func toggleSpeak() {
-        if synthesizer.isSpeaking {
-            synthesizer.pauseSpeaking(at: .immediate)
-        } else if synthesizer.isPaused {
-            synthesizer.continueSpeaking()
+        if speech.isSpeaking || speech.isPaused {
+            speech.toggle()
         } else {
             startSpeak()
         }
     }
 
     private func startSpeak() {
-        // 朗读前激活播放音频会话（.playback），让声音即使在「静音键」开启时也能播出。
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
-        try? AVAudioSession.sharedInstance().setActive(true)
-
         let text = content.isEmpty ? "（没有可朗读的文本）" : content
-        let utt = AVSpeechUtterance(string: text)
-        utt.voice = resolveVoice()
-        utt.rate = rate
-        synthesizer.delegate = speech
-        synthesizer.stopSpeaking(at: .immediate)
-        synthesizer.speak(utt)
-        speech.isSpeaking = true
+        speech.speak(text, voice: resolveVoice(), rate: rate)
+    }
+
+    /// 从指定段落开始朗读（点某段正文触发）。
+    private func speak(fromParagraph index: Int) {
+        guard index >= 0, index < paragraphs.count else { startSpeak(); return }
+        let text = paragraphs[index...].joined(separator: "\n")
+        speech.speak(text, voice: resolveVoice(), rate: rate)
     }
 
     /// 声音包解析：优先用户已选，其次中文，最后任选一个可用声音，避免出现无声音包。
@@ -256,7 +298,6 @@ struct NovelReaderView: View {
     }
 
     private func stopSpeak() {
-        synthesizer.stopSpeaking(at: .immediate)
-        speech.isSpeaking = false
+        speech.stop()
     }
 }
