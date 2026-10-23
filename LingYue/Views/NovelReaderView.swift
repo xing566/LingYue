@@ -4,29 +4,62 @@ import AVFAudio
 import Combine
 
 /// 语音合成控制器：**唯一持有** AVSpeechSynthesizer（@StateObject 持久，避免 @State 引用被重建导致无声），
-/// 负责朗读状态、音频会话激活、播放/暂停/停止。
+/// 负责朗读状态、音频会话激活、分段顺序朗读（避免超长文本静默）、播放/暂停/停止。
 final class SpeechDelegate: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     let synthesizer = AVSpeechSynthesizer()
     @Published var isSpeaking = false
     @Published var isPaused = false
+
+    /// 待朗读的分段队列（全文拆成多段，逐段播完再播下一段）。
+    private var queue: [String] = []
+    private var currentVoice: AVSpeechSynthesisVoice?
+    private var currentRate: Float = 0.5
 
     override init() {
         super.init()
         synthesizer.delegate = self
     }
 
-    /// 播放一段文本（先停掉旧的）。激活播放音频会话，让静音键下也能出声。
+    /// 把长文本拆成适合朗读的分段（每段 ≤ 约 1200 字，按换行切，避免单条语音过长静默）。
+    private func chunk(_ text: String) -> [String] {
+        var result: [String] = []
+        var buf = ""
+        for line in text.components(separatedBy: "\n") {
+            if !line.isEmpty { buf += line + " " }
+            if buf.count >= 1200 {
+                result.append(buf.trimmingCharacters(in: .whitespacesAndNewlines))
+                buf = ""
+            }
+        }
+        let tail = buf.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { result.append(tail) }
+        return result
+    }
+
+    /// 开始/从头朗读（先停掉旧的）。激活播放音频会话，让静音键下也能出声。
     func speak(_ text: String, voice: AVSpeechSynthesisVoice?, rate: Float) {
+        stop()
+        currentVoice = voice
+        currentRate = rate
+        queue = chunk(text)
+        guard !queue.isEmpty else { return }
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
         try? AVAudioSession.sharedInstance().setActive(true)
-        synthesizer.stopSpeaking(at: .immediate)
-        isSpeaking = false
-        isPaused = false
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let utt = AVSpeechUtterance(string: trimmed)
-        utt.voice = voice
-        utt.rate = rate
+        speakNext()
+    }
+
+    /// 播完一段接着播下一段。
+    private func speakNext() {
+        guard !queue.isEmpty else {
+            isSpeaking = false
+            isPaused = false
+            try? AVAudioSession.sharedInstance().setActive(false)
+            return
+        }
+        let text = queue.removeFirst()
+        let utt = AVSpeechUtterance(string: text)
+        utt.voice = currentVoice
+        utt.rate = currentRate
         synthesizer.speak(utt)
         isSpeaking = true
     }
@@ -47,20 +80,24 @@ final class SpeechDelegate: NSObject, ObservableObject, AVSpeechSynthesizerDeleg
     /// 停止
     func stop() {
         synthesizer.stopSpeaking(at: .immediate)
+        queue.removeAll()
         isSpeaking = false
         isPaused = false
         try? AVAudioSession.sharedInstance().setActive(false)
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        isSpeaking = false
-        isPaused = false
-        try? AVAudioSession.sharedInstance().setActive(false)
+        if !queue.isEmpty {
+            speakNext()
+        } else {
+            isSpeaking = false
+            isPaused = false
+            try? AVAudioSession.sharedInstance().setActive(false)
+        }
     }
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         isSpeaking = false
         isPaused = false
-        try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
 
