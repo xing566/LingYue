@@ -79,7 +79,7 @@ final class LibraryStore {
         defer { isScanning = false }
         do {
             let found = try await source.fetchSongs()
-            songs = dedupe(found)
+            songs = mergePreservingIdentity(found)
             persistSongs()
         } catch {
             print("扫描失败: \(error)")
@@ -187,5 +187,29 @@ final class LibraryStore {
             let key = s.fileURL.lastPathComponent
             return seen.insert(key).inserted
         }
+    }
+
+    /// 用磁盘上已持久化的歌曲合并新扫描结果：
+    /// 同一文件路径的歌曲保留持久化时的 ID，这样播放列表等按 ID 的引用在重启后依然有效。
+    /// （纯数据合并，不依赖自定义哈希，不会引入崩溃。）
+    private func mergePreservingIdentity(_ found: [Song]) -> [Song] {
+        var byPath: [String: Song] = [:]
+        for s in songs { byPath[s.fileURL.path] = s }   // 当前 songs 即启动时从磁盘加载的持久化歌曲
+        var merged: [Song] = []
+        for s in dedupe(found) {
+            let path = s.fileURL.path
+            if var persisted = byPath[path] {
+                // 保留持久化 ID 与封面，标题/歌手/时长用最新扫描结果更新
+                persisted.title = s.title.isEmpty ? persisted.title : s.title
+                persisted.artist = s.artist
+                persisted.album = s.album
+                persisted.duration = s.duration
+                persisted.trackNumber = s.trackNumber
+                merged.append(persisted)
+            } else {
+                merged.append(s)
+            }
+        }
+        return merged
     }
 }
