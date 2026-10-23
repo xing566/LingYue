@@ -62,21 +62,34 @@ struct LocalLibrarySource: MusicSource {
 
     // MARK: - 导入
 
-    /// 把用户选中的外部音频文件拷贝进沙盒，返回新增的 Song 列表
+    /// 把用户选中的外部音频文件拷贝进沙盒，返回新增的 Song 列表。
+    ///
+    /// 通过 `fileImporter` 选择的文件是 **security-scoped 资源**，必须先调用
+    /// `startAccessingSecurityScopedResource()` 获取访问权限，再读取/拷贝；
+    /// 否则 `copyItem` 会抛 "Operation not permitted"，导致"本地曲库无法添加"。
     func importFiles(from urls: [URL]) async throws -> [Song] {
         try FileManager.default.createDirectory(at: libraryURL,
                                                 withIntermediateDirectories: true)
         var imported: [Song] = []
         for src in urls {
-            // 已在沙盒内则跳过拷贝
-            if src.deletingLastPathComponent().standardizedFileURL == libraryURL.standardizedFileURL {
-                if let song = await makeSong(from: src) { imported.append(song) }
-                continue
+            let accessed = src.startAccessingSecurityScopedResource()
+            defer {
+                if accessed { src.stopAccessingSecurityScopedResource() }
             }
-            let dest = libraryURL.appendingPathComponent(src.lastPathComponent)
-            try? FileManager.default.removeItem(at: dest) // 避免同名冲突
-            try FileManager.default.copyItem(at: src, to: dest)
-            if let song = await makeSong(from: dest) { imported.append(song) }
+            do {
+                // 已在沙盒内则跳过拷贝
+                if src.deletingLastPathComponent().standardizedFileURL == libraryURL.standardizedFileURL {
+                    if let song = await makeSong(from: src) { imported.append(song) }
+                    continue
+                }
+                let dest = libraryURL.appendingPathComponent(src.lastPathComponent)
+                try? FileManager.default.removeItem(at: dest) // 避免同名冲突
+                try FileManager.default.copyItem(at: src, to: dest)
+                if let song = await makeSong(from: dest) { imported.append(song) }
+            } catch {
+                // 单个文件失败不中断其余导入
+                print("导入单个文件失败 \(src.lastPathComponent): \(error)")
+            }
         }
         return imported
     }

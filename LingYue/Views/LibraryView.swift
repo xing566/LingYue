@@ -8,6 +8,7 @@ struct LibraryView: View {
     @State private var segment: Segment = .songs
     @State private var sourceMode: SourceMode = .local
     @State private var importPresented = false
+    @State private var onlineSearchPresented = false
 
     enum Segment: String, CaseIterable {
         case songs = "歌曲", albums = "专辑", artists = "歌手"
@@ -63,12 +64,15 @@ struct LibraryView: View {
         }
         .fileImporter(
             isPresented: $importPresented,
-            allowedContentTypes: [.audio],
+            allowedContentTypes: [.item],
             allowsMultipleSelection: true
         ) { result in
             if case .success(let urls) = result {
                 Task { await library.importFiles(from: urls) }
             }
+        }
+        .sheet(isPresented: $onlineSearchPresented) {
+            OnlineSearchView()
         }
         .overlay {
             if sourceMode == .local && library.songs.isEmpty && !library.isScanning {
@@ -98,6 +102,14 @@ struct LibraryView: View {
                         Text("可在「设置 → 在线歌单」填入你自己的歌单地址，\n否则使用内置默认歌单（公版名曲）。")
                             .font(.system(size: 13)).foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
+                        Button {
+                            onlineSearchPresented = true
+                        } label: {
+                            Label("在线搜索音乐（网络 / 网页）", systemImage: "magnifyingglass")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.accentColor)
+                        }
+                        .padding(.top, 4)
                     }
                 }
                 .padding(30)
@@ -115,6 +127,12 @@ struct LibraryView: View {
                             Task { await library.fetchOnlineSongs() }
                         } label: {
                             Label("刷新歌单", systemImage: "arrow.clockwise")
+                                .foregroundColor(.secondary)
+                        }
+                        Button {
+                            onlineSearchPresented = true
+                        } label: {
+                            Label("在线搜索音乐（网络 / 网页）", systemImage: "magnifyingglass")
                                 .foregroundColor(.secondary)
                         }
                     }
