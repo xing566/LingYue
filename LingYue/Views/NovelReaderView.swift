@@ -18,6 +18,7 @@ final class SpeechDelegate: NSObject, ObservableObject, AVSpeechSynthesizerDeleg
 struct NovelReaderView: View {
     let novel: Novel
     @State private var content = ""
+    @State private var paragraphs: [String] = []
     @State private var isLoading = false
     @State private var loadProgress: Double = 0
     @State private var fontSize: CGFloat = 18
@@ -40,6 +41,11 @@ struct NovelReaderView: View {
         return AVSpeechSynthesisVoice(language: "zh-CN")
     }
 
+    /// 正文文字颜色（随明暗主题）。
+    private var bodyColor: Color {
+        isDark ? Color(red: 0.92, green: 0.90, blue: 0.85) : Color(red: 0.15, green: 0.13, blue: 0.11)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             speakBar
@@ -58,14 +64,29 @@ struct NovelReaderView: View {
             }
 
             ScrollView {
-                Text(content.isEmpty ? "（无法读取或文件为空）" : content)
-                    .font(.system(size: fontSize))
-                    .lineSpacing(6)
-                    .foregroundColor(isDark ? Color(red: 0.92, green: 0.90, blue: 0.85) : Color(red: 0.15, green: 0.13, blue: 0.11))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if paragraphs.isEmpty {
+                    Text(content.isEmpty ? "（无法读取或文件为空）" : content)
+                        .font(.system(size: fontSize))
+                        .lineSpacing(6)
+                        .foregroundColor(bodyColor)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 24)
+                        .textSelection(.enabled)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, para in
+                            Text(para)
+                                .font(.system(size: fontSize))
+                                .lineSpacing(6)
+                                .foregroundColor(bodyColor)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                        }
+                    }
                     .padding(.horizontal, 20)
                     .padding(.vertical, 24)
-                    .textSelection(.enabled)
+                }
             }
         }
         .background((isDark ? Color(red: 0.06, green: 0.07, blue: 0.10) : Color(red: 0.96, green: 0.94, blue: 0.88))
@@ -101,6 +122,7 @@ struct NovelReaderView: View {
             let preview = LocalNovelSource.readTextPreview(from: url)
             DispatchQueue.main.async {
                 self.content = preview
+                self.paragraphs = self.buildParagraphs(preview)
             }
             // 2) 后台继续读全文 + 进度
             let full = LocalNovelSource.readTextChunked(from: url) { p in
@@ -110,9 +132,27 @@ struct NovelReaderView: View {
             }
             DispatchQueue.main.async {
                 self.content = full
+                self.paragraphs = self.buildParagraphs(full)
                 self.isLoading = false
             }
         }
+    }
+
+    /// 把整本文本拆成多个短段落，配合 LazyVStack 惰性渲染，避免一个巨型 Text 拖慢界面。
+    private func buildParagraphs(_ text: String) -> [String] {
+        var result: [String] = []
+        for line in text.components(separatedBy: "\n") {
+            if line.isEmpty { continue }
+            // 超长行（无换行）按固定长度再拆，保证每个段落渲染轻量
+            var rest = Substring(line)
+            while rest.count > 2500 {
+                let idx = rest.index(rest.startIndex, offsetBy: 2500)
+                result.append(String(rest[..<idx]))
+                rest = rest[idx...]
+            }
+            result.append(String(rest))
+        }
+        return result
     }
 
     // MARK: 朗读控制条
