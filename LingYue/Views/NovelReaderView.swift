@@ -3,7 +3,7 @@ import AVFoundation
 import Combine
 
 /// 语音合成控制器：负责朗读状态与代理回调（播放完成/取消时更新 UI）。
-final class SpeechDelegate: ObservableObject, AVSpeechSynthesizerDelegate {
+final class SpeechDelegate: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
     @Published var isSpeaking = false
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
