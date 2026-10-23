@@ -8,7 +8,7 @@ struct RootTabView: View {
     @State private var showNowPlaying = false
 
     enum Tab: Hashable {
-        case library, playlists, search, settings
+        case library, playlists, audiobooks, search, settings
     }
 
     var body: some View {
@@ -21,6 +21,10 @@ struct RootTabView: View {
                 NavigationStack { PlaylistView() }
                     .tabItem { Label("播放列表", systemImage: "list.bullet") }
                     .tag(Tab.playlists)
+
+                NavigationStack { AudiobookView() }
+                    .tabItem { Label("小说", systemImage: "book") }
+                    .tag(Tab.audiobooks)
 
                 NavigationStack { SearchView() }
                     .tabItem { Label("搜索", systemImage: "magnifyingglass") }
