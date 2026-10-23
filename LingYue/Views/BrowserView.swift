@@ -15,6 +15,8 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDe
     @Published var canGoBack = false
     @Published var canGoForward = false
     let webView: WKWebView
+    /// 页面状态变化（标题/可前进可后退）时回调管理器，用于刷新 UI。
+    var onStateChange: (() -> Void)?
 
     override init() {
         let config = WKWebViewConfiguration()
@@ -41,6 +43,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDe
         title = webView.title ?? title
         canGoBack = webView.canGoBack
         canGoForward = webView.canGoForward
+        onStateChange?()
     }
 }
 
@@ -48,11 +51,11 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDe
 final class BrowserModel: ObservableObject {
     @Published var tabs: [BrowserTab] = []
     @Published var activeIndex = 0
+    @Published var pageTitle = ""
+    @Published var canGoBack = false
+    @Published var canGoForward = false
 
     var activeTab: BrowserTab? { tabs.indices.contains(activeIndex) ? tabs[activeIndex] : nil }
-    var pageTitle: String { activeTab?.title ?? "" }
-    var canGoBack: Bool { activeTab?.canGoBack ?? false }
-    var canGoForward: Bool { activeTab?.canGoForward ?? false }
     var activeURL: URL? { activeTab?.webView.url }
 
     /// 广告屏蔽开关（存在本地，设置页可改）
@@ -83,14 +86,19 @@ final class BrowserModel: ObservableObject {
     func addTab(initialURL: URL?) -> BrowserTab {
         let tab = BrowserTab()
         if let list = Self.adList { tab.installAdBlocker(list) }
+        tab.onStateChange = { [weak self] in self?.refreshNav() }
         if let url = initialURL { tab.load(url) }
         tabs.append(tab)
         activeIndex = tabs.count - 1
+        refreshNav()
         return tab
     }
 
     func switchTo(_ tab: BrowserTab) {
-        if let i = tabs.firstIndex(where: { $0.id == tab.id }) { activeIndex = i }
+        if let i = tabs.firstIndex(where: { $0.id == tab.id }) {
+            activeIndex = i
+            refreshNav()
+        }
     }
 
     func closeTab(_ tab: BrowserTab) {
@@ -98,6 +106,17 @@ final class BrowserModel: ObservableObject {
         tabs.remove(at: i)
         if activeIndex >= tabs.count { activeIndex = max(0, tabs.count - 1) }
         else if activeIndex == i { activeIndex = min(i, tabs.count - 1) }
+        refreshNav()
+    }
+
+    /// 从当前激活标签同步标题与前进/后退状态到发布的属性（驱动底部按钮启用态）。
+    func refreshNav() {
+        guard let tab = activeTab else {
+            pageTitle = ""; canGoBack = false; canGoForward = false; return
+        }
+        pageTitle = tab.title
+        canGoBack = tab.webView.canGoBack
+        canGoForward = tab.webView.canGoForward
     }
 
     // 导航控制（作用于当前标签）
