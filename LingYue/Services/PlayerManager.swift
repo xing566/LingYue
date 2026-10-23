@@ -188,7 +188,9 @@ final class PlayerManager {
 
     private func configureAudioSession() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default, options: [])
+        // 支持蓝牙耳机：A2DP 高音质输出 + HFP（通话/麦克风类）
+        try? session.setCategory(.playback, mode: .default,
+                                 options: [.allowBluetoothA2DP, .allowBluetooth, .defaultToSpeaker])
         try? session.setActive(true)
     }
 
