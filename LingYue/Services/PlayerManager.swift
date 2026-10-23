@@ -63,9 +63,12 @@ final class PlayerManager {
         player?.pause()
         isPlaying = false
         updateNowPlaying()
+        // 暂停后释放音频会话，避免空转耗电
+        try? AVAudioSession.sharedInstance().setActive(false)
     }
 
     func resume() {
+        try? AVAudioSession.sharedInstance().setActive(true)
         player?.play()
         isPlaying = true
         updateNowPlaying()

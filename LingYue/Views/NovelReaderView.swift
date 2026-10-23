@@ -49,15 +49,18 @@ final class SpeechDelegate: NSObject, ObservableObject, AVSpeechSynthesizerDeleg
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = false
         isPaused = false
+        try? AVAudioSession.sharedInstance().setActive(false)
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
         isPaused = false
+        try? AVAudioSession.sharedInstance().setActive(false)
     }
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         isSpeaking = false
         isPaused = false
+        try? AVAudioSession.sharedInstance().setActive(false)
     }
 }
 

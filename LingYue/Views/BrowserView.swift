@@ -84,6 +84,8 @@ final class BrowserModel: ObservableObject {
 
     @discardableResult
     func addTab(initialURL: URL?) -> BrowserTab {
+        // 限制并发标签数量，避免多个 WebView 常驻进程导致耗电
+        guard tabs.count < 10 else { return activeTab ?? BrowserTab() }
         let tab = BrowserTab()
         if let list = Self.adList { tab.installAdBlocker(list) }
         tab.onStateChange = { [weak self] in self?.refreshNav() }
