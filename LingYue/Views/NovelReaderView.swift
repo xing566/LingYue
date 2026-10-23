@@ -61,8 +61,15 @@ final class SpeechDelegate: NSObject, ObservableObject, AVSpeechSynthesizerDeleg
     }
 }
 
-/// TXT 小说阅读器：上下滑动（滚动）阅读，支持调节字号、明暗主题，
-/// 以及「朗读」功能（切换声音包 / 语速 / 播放暂停停止 / 点段落从此处开始朗读）。
+/// 目录条目：title 为章节标题，index 为对应正文段落下标。
+struct TOCEntry: Identifiable {
+    let id: Int
+    let index: Int
+    let title: String
+}
+
+/// TXT 小说阅读器：上下滑动（滚动）阅读，支持调节字号、明暗主题、
+/// 目录跳转，以及「朗读」功能（切换声音包 / 语速 / 播放暂停停止 / 点段落从此处开始朗读）。
 struct NovelReaderView: View {
     let novel: Novel
     @State private var content = ""
@@ -74,6 +81,11 @@ struct NovelReaderView: View {
     @State private var rate: Float = 0.5
     @State private var voiceID: String = UserDefaults.standard.string(forKey: "ttsVoice") ?? ""
     @StateObject private var speech = SpeechDelegate()
+
+    /// 目录：识别到的章节标题（index 对应正文段落下标）。
+    @State private var tocEntries: [TOCEntry] = []
+    @State private var showTOC = false
+    @State private var scrollTarget: Int?
 
     /// 可选用的声音包（优先中文，其余按语言归类）
     var availableVoices: [AVSpeechSynthesisVoice] {
@@ -110,30 +122,37 @@ struct NovelReaderView: View {
                 .padding(.vertical, 6)
             }
 
-            ScrollView {
-                if paragraphs.isEmpty {
-                    Text(content.isEmpty ? "（无法读取或文件为空）" : content)
-                        .font(.system(size: fontSize))
-                        .lineSpacing(6)
-                        .foregroundColor(bodyColor)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    if paragraphs.isEmpty {
+                        Text(content.isEmpty ? "（无法读取或文件为空）" : content)
+                            .font(.system(size: fontSize))
+                            .lineSpacing(6)
+                            .foregroundColor(bodyColor)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 24)
+                            .textSelection(.enabled)
+                            .id(0)
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 12) {
+                            ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, para in
+                                Text(para)
+                                    .font(.system(size: fontSize))
+                                    .lineSpacing(6)
+                                    .foregroundColor(bodyColor)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                                    .id(index)
+                                    .onTapGesture { speak(fromParagraph: index) }
+                            }
+                        }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 24)
-                        .textSelection(.enabled)
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(paragraphs.enumerated()), id: \.offset) { index, para in
-                            Text(para)
-                                .font(.system(size: fontSize))
-                                .lineSpacing(6)
-                                .foregroundColor(bodyColor)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
-                                .onTapGesture { speak(fromParagraph: index) }
-                        }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 24)
+                }
+                .onChange(of: scrollTarget) { new in
+                    if let new { withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(new, anchor: .top) } }
                 }
             }
         }
@@ -142,6 +161,12 @@ struct NovelReaderView: View {
         .navigationTitle(novel.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showTOC = true } label: {
+                    Image(systemName: "list.bullet")
+                }
+                .disabled(tocEntries.isEmpty)
+            }
             ToolbarItemGroup(placement: .bottomBar) {
                 Button { fontSize = max(13, fontSize - 2) } label: {
                     Image(systemName: "textformat.size.smaller")
@@ -156,6 +181,7 @@ struct NovelReaderView: View {
                 }
             }
         }
+        .sheet(isPresented: $showTOC) { tocSheet }
         .task { loadText() }
         .onDisappear { stopSpeak() }
     }
@@ -181,7 +207,64 @@ struct NovelReaderView: View {
             DispatchQueue.main.async {
                 self.content = full
                 self.paragraphs = self.buildParagraphs(full)
+                self.tocEntries = self.buildTOC(from: self.paragraphs)
                 self.isLoading = false
+            }
+        }
+    }
+
+    /// 识别章节标题生成目录（“第X章/回/节/卷”、“卷一”、“Chapter N”等）。
+    private func buildTOC(from paragraphs: [String]) -> [TOCEntry] {
+        var entries: [TOCEntry] = []
+        for (i, para) in paragraphs.enumerated() {
+            let t = para.trimmingCharacters(in: .whitespacesAndNewlines)
+            if isChapterHeading(t) {
+                entries.append(TOCEntry(id: entries.count, index: i, title: String(t.prefix(40))))
+            }
+        }
+        return entries
+    }
+
+    private func isChapterHeading(_ s: String) -> Bool {
+        guard !s.isEmpty, s.count <= 60 else { return false }
+        if s.range(of: #"^第\s*[0-9一二三四五六七八九十百千万零]+\s*[章回节卷部集]"#, options: .regularExpression) != nil { return true }
+        if s.range(of: #"^[卷部集]\s*[一二三四五六七八九十]+"#, options: .regularExpression) != nil { return true }
+        if s.range(of: #"^(Chapter|CHAPTER|chapter)\s*\d+"#, options: .regularExpression) != nil { return true }
+        return false
+    }
+
+    /// 目录面板：点条目 → 跳到该章节并从此处开始朗读。
+    private var tocSheet: some View {
+        NavigationStack {
+            List {
+                if tocEntries.isEmpty {
+                    Text("未识别到章节标题（支持「第X章」「第X回」「第X卷」「卷一」「Chapter N」）")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(tocEntries) { entry in
+                        Button {
+                            scrollTarget = entry.index
+                            showTOC = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                speak(fromParagraph: entry.index)
+                            }
+                        } label: {
+                            Text(entry.title)
+                                .font(.system(size: 15))
+                                .foregroundColor(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("目录")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { showTOC = false }
+                }
             }
         }
     }
