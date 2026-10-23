@@ -146,6 +146,7 @@ struct BrowserView: View {
     @State private var address = ""
     @State private var savedPages: [SavedPage] = BrowserStore.load()
     @State private var showCache = false
+    @State private var showSavedToast = false
     private let initialURL: URL?
 
     init(initialURL: URL? = nil) {
@@ -165,6 +166,19 @@ struct BrowserView: View {
                             .multilineTextAlignment(.center)
                     }
                 }
+                // 保存成功提示
+                if showSavedToast {
+                    Text("已保存到缓存列表")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial)
+                        .clipShape(Capsule())
+                        .transition(.opacity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, 24)
+                }
             }
             bottomBar
         }
@@ -173,14 +187,10 @@ struct BrowserView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    BrowserStore.append(SavedPage(
-                        title: model.pageTitle.isEmpty ? (address.isEmpty ? (initialURL?.absoluteString ?? "页面") : address) : model.pageTitle,
-                        urlString: model.activeURL?.absoluteString ?? initialURL?.absoluteString ?? ""))
-                    savedPages = BrowserStore.load()
+                    saveCurrentPage()
                 } label: {
                     Image(systemName: "bookmark")
                 }
-                .disabled(model.activeURL == nil && initialURL == nil)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showCache = true } label: {
@@ -203,6 +213,21 @@ struct BrowserView: View {
         .onChange(of: model.activeIndex) { syncAddress() }
         .onChange(of: model.pageTitle) {
             if let u = model.activeURL { address = u.absoluteString }
+        }
+    }
+
+    /// 把当前页面保存进缓存列表（手动书签），成功给提示。不做自动历史收集。
+    private func saveCurrentPage() {
+        let currentURL = model.activeURL?.absoluteString
+            ?? (address.isEmpty ? initialURL?.absoluteString : address)
+        guard let urlString = currentURL, !urlString.isEmpty else { return }
+        let title = model.pageTitle.isEmpty ? (address.isEmpty ? urlString : address) : model.pageTitle
+        BrowserStore.append(SavedPage(title: title, urlString: urlString))
+        savedPages = BrowserStore.load()
+        // 提示
+        withAnimation { showSavedToast = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            withAnimation { showSavedToast = false }
         }
     }
 
