@@ -5,12 +5,26 @@ options:
     iOS: "17.0"
   createIntermediateGroups: true
 
+packages:
+  FFmpegKit:
+    url: https://github.com/kingslay/FFmpegKit
+    branch: main
+
 targets:
   LingYue:
     type: application
     platform: iOS
     sources:
       - LingYue
+    dependencies:
+      - package: FFmpegKit
+        product: Libavcodec
+      - package: FFmpegKit
+        product: Libavformat
+      - package: FFmpegKit
+        product: Libavutil
+      - package: FFmpegKit
+        product: Libswresample
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lingyue.app
