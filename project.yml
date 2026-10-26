@@ -23,6 +23,9 @@ targets:
         product: Libavformat
       - package: FFmpegKit
         product: Libavutil
+      # Libavcodec 运行时依赖 Libswresample，必须一并嵌入，否则 dyld 启动即崩
+      - package: FFmpegKit
+        product: Libswresample
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lingyue.app
