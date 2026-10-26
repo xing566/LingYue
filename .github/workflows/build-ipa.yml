@@ -42,6 +42,14 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Deep ad-hoc sign app bundle (incl. embedded FFmpeg frameworks)
+        run: |
+          set -e
+          APP="build/Build/Products/Release-iphoneos/LingYue.app"
+          test -d "$APP" || { echo "App bundle not found: $APP"; exit 1; }
+          # 对主程序与所有内嵌框架做深度 ad-hoc 签名，避免侧载工具漏签框架导致启动闪退
+          codesign --force --deep --sign - "$APP"
+
       - name: Package .ipa
         run: |
           set -e
