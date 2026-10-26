@@ -38,7 +38,6 @@ enum FFmpegTranscoder {
 
         guard avformat_find_stream_info(fmt, nil) >= 0 else { return false }
 
-        // 找最佳音频流
         let streamIdx = av_find_best_stream(fmt, AVMEDIA_TYPE_AUDIO, -1, -1, nil, 0)
         guard streamIdx >= 0 else { return false }
         guard let stream = fmt.pointee.streams[Int(streamIdx)] else { return false }
@@ -51,19 +50,17 @@ enum FFmpegTranscoder {
         guard avcodec_parameters_to_context(dec, codecpar) >= 0 else { return false }
         guard avcodec_open2(dec, codec, nil) >= 0 else { return false }
 
-        // 输出参数（解码器原生格式）
-        let sampleFmt = dec.pointee.sample_fmt
-        let channels = Int(dec.pointee.ch_layout.nb_channels)
-        let rate = Int(dec.pointee.sample_rate)
+        let sampleFmt = dec!.pointee.sample_fmt
+        let channels = Int(dec!.pointee.ch_layout.nb_channels)
+        let rate = Int(dec!.pointee.sample_rate)
         guard channels > 0, rate > 0 else { return false }
         guard let info = wavInfo(for: sampleFmt) else { return false }
 
-        // 打开输出文件
         guard let cOut = outputPath.cString(using: .utf8) else { return false }
         guard let fp = fopen(cOut, "wb") else { return false }
         defer { fclose(fp) }
 
-        // 占位 WAV 头（44 字节），写完数据再回头补大小
+        // 占位 WAV 头（44 字节），写完数据再回头补
         var placeholder = Data(repeating: 0, count: 44)
         _ = placeholder.withUnsafeBytes { fwrite($0.baseAddress, 1, 44, fp) }
         var dataBytes: UInt32 = 0
@@ -75,10 +72,10 @@ enum FFmpegTranscoder {
 
         while av_read_frame(fmt, pkt) >= 0 {
             defer { av_packet_unref(pkt) }
-            if pkt.pointee.stream_index == streamIdx {
+            if pkt!.pointee.stream_index == streamIdx {
                 if avcodec_send_packet(dec, pkt) >= 0 {
                     while avcodec_receive_frame(dec, frame) >= 0 {
-                        guard appendFrame(frame, to: fp, dataBytes: &dataBytes,
+                        guard appendFrame(frame!, to: fp, dataBytes: &dataBytes,
                                           fmt: sampleFmt, channels: channels) else {
                             return false
                         }
@@ -87,26 +84,18 @@ enum FFmpegTranscoder {
                 }
             }
         }
-        // 冲刷解码器剩余帧
         avcodec_send_packet(dec, nil)
         while avcodec_receive_frame(dec, frame) >= 0 {
-            guard appendFrame(frame, to: fp, dataBytes: &dataBytes,
+            guard appendFrame(frame!, to: fp, dataBytes: &dataBytes,
                               fmt: sampleFmt, channels: channels) else { return false }
             av_frame_unref(frame)
         }
 
-        // 补写 WAV 头
+        // 写 WAV 头
         let blockAlign: UInt16 = UInt16(channels * info.bytes)
         let byteRate: UInt32 = UInt32(rate) * UInt32(blockAlign)
         let bits: UInt16 = UInt16(info.bytes * 8)
 
-        fseek(fp, 4, SEEK_SET)
-        var riffSize: UInt32 = 36 &+ dataBytes
-        withUnsafePointer(to: &riffSize) { fwrite($0, 1, 4, fp) }
-        fseek(fp, 40, SEEK_SET)
-        withUnsafePointer(to: &dataBytes) { fwrite($0, 1, 4, fp) }
-
-        // 用原始头部重写 fmt 块关键字段
         var header = Data()
         header.append(contentsOf: [UInt8]("RIFF".utf8))
         header.append(contentsOf: little32(36 &+ dataBytes))
@@ -138,7 +127,10 @@ enum FFmpegTranscoder {
         let samples = Int(frame.pointee.nb_samples)
         guard samples > 0 else { return true }
         guard let info = wavInfo(for: fmt) else { return false }
-        guard let planes = frame.pointee.data else { return false }
+
+        // frame.data 在 Swift 中被导入为元组，转成平面指针数组
+        let d = frame.pointee.data
+        let planes: [UnsafeMutablePointer<UInt8>?] = [d.0, d.1, d.2, d.3, d.4, d.5, d.6, d.7]
 
         if info.planar {
             let outCount = samples * channels
@@ -151,17 +143,17 @@ enum FFmpegTranscoder {
                     guard let src = planes[c] else { return false }
                     switch fmt {
                     case AV_SAMPLE_FMT_FLTP:
-                        let v = src.advanced(by: i).withMemoryRebound(to: Float.self, capacity: 1) { $0.pointee }
-                        outBuf.advanced(by: (i * channels + c) * 4)
-                            .withMemoryRebound(to: Float.self, capacity: 1).pointee = v
+                        let v = UnsafeRawPointer(src).advanced(by: i * 4).load(as: Float.self)
+                        UnsafeMutableRawPointer(outBuf).advanced(by: (i * channels + c) * 4)
+                            .storeBytes(of: v, as: Float.self)
                     case AV_SAMPLE_FMT_S16P:
-                        let v = src.advanced(by: i).withMemoryRebound(to: Int16.self, capacity: 1) { $0.pointee }
-                        outBuf.advanced(by: (i * channels + c) * 2)
-                            .withMemoryRebound(to: Int16.self, capacity: 1).pointee = v
+                        let v = UnsafeRawPointer(src).advanced(by: i * 2).load(as: Int16.self)
+                        UnsafeMutableRawPointer(outBuf).advanced(by: (i * channels + c) * 2)
+                            .storeBytes(of: v, as: Int16.self)
                     case AV_SAMPLE_FMT_S32P:
-                        let v = src.advanced(by: i).withMemoryRebound(to: Int32.self, capacity: 1) { $0.pointee }
-                        outBuf.advanced(by: (i * channels + c) * 4)
-                            .withMemoryRebound(to: Int32.self, capacity: 1).pointee = v
+                        let v = UnsafeRawPointer(src).advanced(by: i * 4).load(as: Int32.self)
+                        UnsafeMutableRawPointer(outBuf).advanced(by: (i * channels + c) * 4)
+                            .storeBytes(of: v, as: Int32.self)
                     case AV_SAMPLE_FMT_U8P:
                         outBuf.advanced(by: i * channels + c).pointee = src.advanced(by: i).pointee
                     default:
