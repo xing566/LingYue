@@ -2,10 +2,9 @@ import Foundation
 import Libavcodec
 import Libavformat
 import Libavutil
-import Libswresample
 
 /// 用 FFmpeg（kingslay 音频库）把 iOS 系统无法解码的格式（WMA 等）转成可播的 WAV。
-/// 原理：打开文件 → 找到音频流 → 解码 → 重采样为 44.1kHz/立体声/s16 → 写 WAV。
+/// 原理：打开文件 → 找到音频流 → 解码 → 按解码器原生格式交错写 WAV（不重采样，保留原采样率/声道）。
 enum FFmpegTranscoder {
 
     /// AVPlayer 原生能播的扩展名（这些不需要转码）
@@ -18,7 +17,7 @@ enum FFmpegTranscoder {
         !nativelySupported.contains(url.pathExtension.lowercased())
     }
 
-    /// 把 inputURL 解码成同目录的 .wav（44.1kHz / 立体声 / 16bit）。成功返回 wav URL。
+    /// 把 inputURL 解码成同目录的 .wav。成功返回 wav URL。
     static func decodeToWav(input inputURL: URL) async -> URL? {
         let outputURL = inputURL.deletingPathExtension().appendingPathExtension("wav")
         let ok = await Task.detached(priority: .userInitiated) { () -> Bool in
@@ -45,45 +44,33 @@ enum FFmpegTranscoder {
         guard let stream = fmt.pointee.streams[Int(streamIdx)] else { return false }
         guard let codecpar = stream.pointee.codecpar else { return false }
         guard let codec = avcodec_find_decoder(codecpar.pointee.codec_id) else { return false }
-        guard let dec = avcodec_alloc_context3(codec) else { return false }
+
+        var dec = avcodec_alloc_context3(codec)
+        guard dec != nil else { return false }
         defer { avcodec_free_context(&dec) }
         guard avcodec_parameters_to_context(dec, codecpar) >= 0 else { return false }
         guard avcodec_open2(dec, codec, nil) >= 0 else { return false }
 
-        // 输出格式
-        let outRate: Int32 = 44100
-        let outCh: Int32 = 2
-        let outFmt = AVSampleFormat_S16
-
-        var inLayout = AVChannelLayout()
-        av_channel_layout_default(&inLayout, dec.pointee.ch_layout.nb_channels)
-        var outLayout = AVChannelLayout()
-        av_channel_layout_default(&outLayout, outCh)
-
-        // 重采样器
-        var swr: UnsafeMutablePointer<SwrContext>? = swr_alloc()
-        guard let swr else { return false }
-        defer { swr_free(&swr) }
-        let swrOK = swr_alloc_set_opts2(
-            &swr,
-            &outLayout, outFmt, outRate,
-            &inLayout, dec.pointee.sample_fmt, dec.pointee.sample_rate,
-            0, nil)
-        guard swrOK >= 0, swr_init(swr) >= 0 else { return false }
+        // 输出参数（解码器原生格式）
+        let sampleFmt = dec.pointee.sample_fmt
+        let channels = Int(dec.pointee.ch_layout.nb_channels)
+        let rate = Int(dec.pointee.sample_rate)
+        guard channels > 0, rate > 0 else { return false }
+        guard let info = wavInfo(for: sampleFmt) else { return false }
 
         // 打开输出文件
         guard let cOut = outputPath.cString(using: .utf8) else { return false }
         guard let fp = fopen(cOut, "wb") else { return false }
         defer { fclose(fp) }
 
-        // 先写占位 WAV 头（44 字节），全部写完再回头补大小
+        // 占位 WAV 头（44 字节），写完数据再回头补大小
         var placeholder = Data(repeating: 0, count: 44)
         _ = placeholder.withUnsafeBytes { fwrite($0.baseAddress, 1, 44, fp) }
         var dataBytes: UInt32 = 0
 
-        let pkt = av_packet_alloc()
-        let frame = av_frame_alloc()
-        guard let pkt, let frame else { return false }
+        var pkt = av_packet_alloc()
+        var frame = av_frame_alloc()
+        guard pkt != nil, frame != nil else { return false }
         defer { av_packet_free(&pkt); av_frame_free(&frame) }
 
         while av_read_frame(fmt, pkt) >= 0 {
@@ -91,9 +78,8 @@ enum FFmpegTranscoder {
             if pkt.pointee.stream_index == streamIdx {
                 if avcodec_send_packet(dec, pkt) >= 0 {
                     while avcodec_receive_frame(dec, frame) >= 0 {
-                        guard writeFrame(swr, frame, to: fp, outFmt: outFmt,
-                                         outCh: outCh, outRate: outRate,
-                                         dataBytes: &dataBytes) else {
+                        guard appendFrame(frame, to: fp, dataBytes: &dataBytes,
+                                          fmt: sampleFmt, channels: channels) else {
                             return false
                         }
                         av_frame_unref(frame)
@@ -104,56 +90,117 @@ enum FFmpegTranscoder {
         // 冲刷解码器剩余帧
         avcodec_send_packet(dec, nil)
         while avcodec_receive_frame(dec, frame) >= 0 {
-            guard writeFrame(swr, frame, to: fp, outFmt: outFmt,
-                             outCh: outCh, outRate: outRate,
-                             dataBytes: &dataBytes) else { return false }
+            guard appendFrame(frame, to: fp, dataBytes: &dataBytes,
+                              fmt: sampleFmt, channels: channels) else { return false }
             av_frame_unref(frame)
         }
 
-        // 补写 WAV 头大小
+        // 补写 WAV 头
+        let blockAlign: UInt16 = UInt16(channels * info.bytes)
+        let byteRate: UInt32 = UInt32(rate) * UInt32(blockAlign)
+        let bits: UInt16 = UInt16(info.bytes * 8)
+
         fseek(fp, 4, SEEK_SET)
         var riffSize: UInt32 = 36 &+ dataBytes
         withUnsafePointer(to: &riffSize) { fwrite($0, 1, 4, fp) }
         fseek(fp, 40, SEEK_SET)
         withUnsafePointer(to: &dataBytes) { fwrite($0, 1, 4, fp) }
+
+        // 用原始头部重写 fmt 块关键字段
+        var header = Data()
+        header.append(contentsOf: [UInt8]("RIFF".utf8))
+        header.append(contentsOf: little32(36 &+ dataBytes))
+        header.append(contentsOf: [UInt8]("WAVE".utf8))
+        header.append(contentsOf: [UInt8]("fmt ".utf8))
+        header.append(contentsOf: little32(16))
+        header.append(contentsOf: little16(info.tag))
+        header.append(contentsOf: little16(UInt16(channels)))
+        header.append(contentsOf: little32(UInt32(rate)))
+        header.append(contentsOf: little32(byteRate))
+        header.append(contentsOf: little16(blockAlign))
+        header.append(contentsOf: little16(bits))
+        header.append(contentsOf: [UInt8]("data".utf8))
+        header.append(contentsOf: little32(dataBytes))
+        fseek(fp, 0, SEEK_SET)
+        _ = header.withUnsafeBytes { fwrite($0.baseAddress, 1, header.count, fp) }
         fflush(fp)
 
         return dataBytes > 0
     }
 
-    /// 把一个解码帧重采样并写入 WAV（小端 s16 交错）。
-    private static func writeFrame(
-        _ swr: UnsafeMutablePointer<SwrContext>?,
-        _ frame: UnsafeMutablePointer<AVFrame>?,
-        to fp: UnsafeMutablePointer<FILE>?,
-        outFmt: AVSampleFormat, outCh: Int32, outRate: Int32,
-        dataBytes: inout UInt32
+    /// 把一个解码帧按原生格式交错写入 WAV。
+    private static func appendFrame(
+        _ frame: UnsafeMutablePointer<AVFrame>,
+        to fp: UnsafeMutablePointer<FILE>,
+        dataBytes: inout UInt32,
+        fmt: AVSampleFormat, channels: Int
     ) -> Bool {
-        let inSamples = frame.pointee.nb_samples
-        guard inSamples > 0 else { return true }
+        let samples = Int(frame.pointee.nb_samples)
+        guard samples > 0 else { return true }
+        guard let info = wavInfo(for: fmt) else { return false }
+        guard let planes = frame.pointee.data else { return false }
 
-        // 估算输出样本数
-        let inRate = frame.pointee.sample_rate
-        let estOut = (Int(inSamples) * Int(outRate) / max(1, Int(inRate))) + 256
-        let capacity = estOut * Int(outCh) * 2  // s16
-        guard capacity > 0 else { return true }
+        if info.planar {
+            let outCount = samples * channels
+            let outBytes = outCount * info.bytes
+            guard outBytes > 0 else { return true }
+            let outBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: outBytes)
+            defer { outBuf.deallocate() }
+            for i in 0..<samples {
+                for c in 0..<channels {
+                    guard let src = planes[c] else { return false }
+                    switch fmt {
+                    case AV_SAMPLE_FMT_FLTP:
+                        let v = src.advanced(by: i).withMemoryRebound(to: Float.self, capacity: 1) { $0.pointee }
+                        outBuf.advanced(by: (i * channels + c) * 4)
+                            .withMemoryRebound(to: Float.self, capacity: 1).pointee = v
+                    case AV_SAMPLE_FMT_S16P:
+                        let v = src.advanced(by: i).withMemoryRebound(to: Int16.self, capacity: 1) { $0.pointee }
+                        outBuf.advanced(by: (i * channels + c) * 2)
+                            .withMemoryRebound(to: Int16.self, capacity: 1).pointee = v
+                    case AV_SAMPLE_FMT_S32P:
+                        let v = src.advanced(by: i).withMemoryRebound(to: Int32.self, capacity: 1) { $0.pointee }
+                        outBuf.advanced(by: (i * channels + c) * 4)
+                            .withMemoryRebound(to: Int32.self, capacity: 1).pointee = v
+                    case AV_SAMPLE_FMT_U8P:
+                        outBuf.advanced(by: i * channels + c).pointee = src.advanced(by: i).pointee
+                    default:
+                        return false
+                    }
+                }
+            }
+            let written = fwrite(outBuf, 1, outBytes, fp)
+            dataBytes += UInt32(written)
+            return written == outBytes
+        } else {
+            // 已是交错
+            guard let first = planes[0] else { return false }
+            let outBytes = samples * channels * info.bytes
+            let written = fwrite(first, 1, outBytes, fp)
+            dataBytes += UInt32(written)
+            return written == outBytes
+        }
+    }
 
-        let outBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: capacity)
-        defer { outBuf.deallocate() }
+    /// 把 AVSampleFormat 映射到 WAV 参数：fmt tag（1=PCM int，3=IEEE float）、每样本字节、是否平面。
+    private static func wavInfo(for fmt: AVSampleFormat) -> (tag: UInt16, bytes: Int, planar: Bool)? {
+        switch fmt {
+        case AV_SAMPLE_FMT_U8:    return (1, 1, false)
+        case AV_SAMPLE_FMT_U8P:   return (1, 1, true)
+        case AV_SAMPLE_FMT_S16:   return (1, 2, false)
+        case AV_SAMPLE_FMT_S16P:  return (1, 2, true)
+        case AV_SAMPLE_FMT_S32:   return (1, 4, false)
+        case AV_SAMPLE_FMT_S32P:  return (1, 4, true)
+        case AV_SAMPLE_FMT_FLT:   return (3, 4, false)
+        case AV_SAMPLE_FMT_FLTP:  return (3, 4, true)
+        default:                  return nil
+        }
+    }
 
-        // 构造输入平面指针数组
-        let dataPtr = frame.pointee.data
-        var inPointers: [UnsafePointer<UInt8>?] = []
-        for i in 0..<8 { inPointers.append(dataPtr?[i]) }
-        var inData: [UnsafePointer<UInt8>?] = inPointers
-
-        var outData: UnsafeMutablePointer<UInt8>? = outBuf
-        let converted = swr_convert(swr, &outData, Int32(estOut),
-                                    &inData, inSamples)
-        guard converted > 0 else { return true }
-        let bytes = Int(converted) * Int(outCh) * 2
-        let written = fwrite(outBuf, 1, bytes, fp)
-        dataBytes += UInt32(written)
-        return true
+    private static func little16(_ v: UInt16) -> [UInt8] {
+        [UInt8(v & 0xFF), UInt8((v >> 8) & 0xFF)]
+    }
+    private static func little32(_ v: UInt32) -> [UInt8] {
+        [UInt8(v & 0xFF), UInt8((v >> 8) & 0xFF), UInt8((v >> 16) & 0xFF), UInt8((v >> 24) & 0xFF)]
     }
 }

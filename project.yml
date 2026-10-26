@@ -23,8 +23,6 @@ targets:
         product: Libavformat
       - package: FFmpegKit
         product: Libavutil
-      - package: FFmpegKit
-        product: Libswresample
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lingyue.app
