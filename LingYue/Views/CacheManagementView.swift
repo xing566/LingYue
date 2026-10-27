@@ -6,6 +6,7 @@ struct CacheManagementView: View {
     @State private var webCacheBytes: Int64 = 0
     @State private var localBytes: Int64 = 0
     @State private var lyricCoverBytes: Int64 = 0
+    @State private var transcodedBytes: Int64 = 0
     @State private var clearing = false
     @State private var clearMessage: String?
 
@@ -61,6 +62,18 @@ struct CacheManagementView: View {
 
             Section {
                 HStack {
+                    Label("转码文件（WMA等→WAV）", systemImage: "waveform")
+                    Spacer()
+                    Text(byteString(transcodedBytes)).foregroundColor(.secondary)
+                }
+            } header: {
+                Text("转码文件")
+            } footer: {
+                Text("非原生格式（WMA 等）导入时自动转成的 WAV，就是播放时真正用的音频。删除后对应歌曲无法播放，所以不在一键清除范围内；需要清理请在手机「文件 → 我的 iPhone → 聆乐 → AppCache → Transcoded」里手动删。")
+            }
+
+            Section {
+                HStack {
                     Label("保存的页面", systemImage: "bookmark")
                     Spacer()
                     Text("\(BrowserStore.load().count) 个 · 清除时保留").foregroundColor(.secondary)
@@ -102,9 +115,11 @@ struct CacheManagementView: View {
         let novels = docs.appendingPathComponent("Novels", isDirectory: true)
         let audio = docs.appendingPathComponent("Audio", isDirectory: true)
         localBytes = dirSize(audiobooks) + dirSize(novels) + dirSize(audio)
-        // App缓存：AppCache/Lyrics + AppCache/Covers（手机「文件」里可见的 AppCache 文件夹）
+        // App缓存：AppCache 文件夹（手机「文件」里可见），分歌词/封面 与 转码文件
         let appCache = docs.appendingPathComponent("AppCache", isDirectory: true)
-        lyricCoverBytes = dirSize(appCache)
+        lyricCoverBytes = dirSize(appCache.appendingPathComponent("Lyrics", isDirectory: true))
+            + dirSize(appCache.appendingPathComponent("Covers", isDirectory: true))
+        transcodedBytes = dirSize(appCache.appendingPathComponent("Transcoded", isDirectory: true))
     }
 
     private func dirSize(_ dir: URL) -> Int64 {
@@ -141,10 +156,15 @@ struct CacheManagementView: View {
         clearMessage = nil
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let appCache = docs.appendingPathComponent("AppCache", isDirectory: true)
+        // 只清歌词/封面，转码文件（可播放音频）保留
+        let targets = [appCache.appendingPathComponent("Lyrics", isDirectory: true),
+                       appCache.appendingPathComponent("Covers", isDirectory: true)]
         Task { @MainActor in
-            if let items = try? FileManager.default.contentsOfDirectory(at: appCache, includingPropertiesForKeys: nil) {
-                for item in items {
-                    try? FileManager.default.removeItem(at: item)
+            for d in targets {
+                if let items = try? FileManager.default.contentsOfDirectory(at: d, includingPropertiesForKeys: nil) {
+                    for item in items {
+                        try? FileManager.default.removeItem(at: item)
+                    }
                 }
             }
             clearing = false

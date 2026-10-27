@@ -17,9 +17,15 @@ enum FFmpegTranscoder {
         !nativelySupported.contains(url.pathExtension.lowercased())
     }
 
-    /// 把 inputURL 解码成同目录的 .wav。成功返回 wav URL。
+    /// 把 inputURL 解码成 AppCache/Transcoded 下的 .wav。成功返回 wav URL。
     static func decodeToWav(input inputURL: URL) async -> URL? {
-        let outputURL = inputURL.deletingPathExtension().appendingPathExtension("wav")
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AppCache", isDirectory: true)
+            .appendingPathComponent("Transcoded", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // 用输入文件名（不含原扩展名）作为输出名，避免同名冲突
+        let base = inputURL.deletingPathExtension().lastPathComponent
+        let outputURL = dir.appendingPathComponent(base).appendingPathExtension("wav")
         let ok = await Task.detached(priority: .userInitiated) { () -> Bool in
             decode(inputPath: inputURL.path, outputPath: outputURL.path)
         }.value
