@@ -49,21 +49,142 @@ enum FFmpegTranscoder {
         return nil
     }
 
-    /// 把 inputURL 解码成 WAV 数据（写到临时文件、读入内存、随即删除），交给内存播放器用，不占磁盘。
+    /// 把 inputURL 解码成 WAV 数据（纯内存解码，不写任何临时文件），交给内存播放器用。
+    /// 修复：此前会先写临时 WAV 文件再读入内存，长时间播放累积写盘（实测 2 小时 ~1GB）
+    /// 触发 iOS「磁盘写入资源超限」杀掉 App；现改为直接在内存中组装 WAV 数据。
     static func decodeToWavData(input inputURL: URL) async -> Data? {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mem-\(UUID().uuidString)")
-            .appendingPathExtension("wav")
-        let ok = await Task.detached(priority: .userInitiated) { () -> Bool in
-            decode(inputPath: inputURL.path, outputPath: tmp.path)
+        await Task.detached(priority: .userInitiated) { () -> Data? in
+            decodeToData(inputPath: inputURL.path)
         }.value
-        guard ok else {
-            try? FileManager.default.removeItem(at: tmp)
-            return nil
+    }
+
+    /// 纯内存解码：打开文件 → 解码音频流 → 直接在内存 Data 里组装 WAV，不写磁盘。
+    private static func decodeToData(inputPath: String) -> Data? {
+        var fmtCtx: UnsafeMutablePointer<AVFormatContext>? = nil
+        guard let cPath = inputPath.cString(using: .utf8) else { return nil }
+        guard avformat_open_input(&fmtCtx, cPath, nil, nil) >= 0, let fmt = fmtCtx else { return nil }
+        defer { avformat_close_input(&fmtCtx) }
+        guard avformat_find_stream_info(fmt, nil) >= 0 else { return nil }
+
+        let streamIdx = av_find_best_stream(fmt, AVMEDIA_TYPE_AUDIO, -1, -1, nil, 0)
+        guard streamIdx >= 0 else { return nil }
+        guard let stream = fmt.pointee.streams[Int(streamIdx)] else { return nil }
+        guard let codecpar = stream.pointee.codecpar else { return nil }
+        guard let codec = avcodec_find_decoder(codecpar.pointee.codec_id) else { return nil }
+
+        var dec = avcodec_alloc_context3(codec)
+        guard dec != nil else { return nil }
+        defer { avcodec_free_context(&dec) }
+        guard avcodec_parameters_to_context(dec, codecpar) >= 0 else { return nil }
+        guard avcodec_open2(dec, codec, nil) >= 0 else { return nil }
+
+        let sampleFmt = dec!.pointee.sample_fmt
+        let channels = Int(dec!.pointee.ch_layout.nb_channels)
+        let rate = Int(dec!.pointee.sample_rate)
+        guard channels > 0, rate > 0 else { return nil }
+        guard let info = wavInfo(for: sampleFmt) else { return nil }
+
+        // 预留 44 字节 WAV 头 + 初始数据容量（按 1MB 起扩容，避免频繁拷贝）
+        var out = Data(capacity: 44 + 1 * 1024 * 1024)
+        out.append(Data(repeating: 0, count: 44))
+
+        var pkt = av_packet_alloc()
+        var frame = av_frame_alloc()
+        guard pkt != nil, frame != nil else { return nil }
+        defer { av_packet_free(&pkt); av_frame_free(&frame) }
+
+        while av_read_frame(fmt, pkt) >= 0 {
+            defer { av_packet_unref(pkt) }
+            if pkt!.pointee.stream_index == streamIdx {
+                if avcodec_send_packet(dec, pkt) >= 0 {
+                    while avcodec_receive_frame(dec, frame) >= 0 {
+                        guard appendFrameData(frame!, to: &out, fmt: sampleFmt, channels: channels) else { return nil }
+                        av_frame_unref(frame)
+                    }
+                }
+            }
         }
-        let data = try? Data(contentsOf: tmp)
-        try? FileManager.default.removeItem(at: tmp)
-        return data
+        avcodec_send_packet(dec, nil)
+        while avcodec_receive_frame(dec, frame) >= 0 {
+            guard appendFrameData(frame!, to: &out, fmt: sampleFmt, channels: channels) else { return nil }
+            av_frame_unref(frame)
+        }
+
+        // 回填 WAV 头
+        let dataBytes = UInt32(out.count - 44)
+        let blockAlign: UInt16 = UInt16(channels * info.bytes)
+        let byteRate: UInt32 = UInt32(rate) * UInt32(blockAlign)
+        let bits: UInt16 = UInt16(info.bytes * 8)
+
+        var header = Data()
+        header.append(contentsOf: [UInt8]("RIFF".utf8))
+        header.append(contentsOf: little32(36 &+ dataBytes))
+        header.append(contentsOf: [UInt8]("WAVE".utf8))
+        header.append(contentsOf: [UInt8]("fmt ".utf8))
+        header.append(contentsOf: little32(16))
+        header.append(contentsOf: little16(info.tag))
+        header.append(contentsOf: little16(UInt16(channels)))
+        header.append(contentsOf: little32(UInt32(rate)))
+        header.append(contentsOf: little32(byteRate))
+        header.append(contentsOf: little16(blockAlign))
+        header.append(contentsOf: little16(bits))
+        header.append(contentsOf: [UInt8]("data".utf8))
+        header.append(contentsOf: little32(dataBytes))
+        out.replaceSubrange(0..<44, with: header)
+
+        return dataBytes > 0 ? out : nil
+    }
+
+    /// 把一个解码帧按原生格式交错追加到内存 Data（替代写文件的 appendFrame）。
+    private static func appendFrameData(
+        _ frame: UnsafeMutablePointer<AVFrame>,
+        to out: inout Data,
+        fmt: AVSampleFormat, channels: Int
+    ) -> Bool {
+        let samples = Int(frame.pointee.nb_samples)
+        guard samples > 0 else { return true }
+        guard let info = wavInfo(for: fmt) else { return false }
+
+        let d = frame.pointee.data
+        let planes: [UnsafeMutablePointer<UInt8>?] = [d.0, d.1, d.2, d.3, d.4, d.5, d.6, d.7]
+
+        if info.planar {
+            let outCount = samples * channels
+            let outBytes = outCount * info.bytes
+            guard outBytes > 0 else { return true }
+            let outBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: outBytes)
+            defer { outBuf.deallocate() }
+            for i in 0..<samples {
+                for c in 0..<channels {
+                    guard let src = planes[c] else { return false }
+                    switch fmt {
+                    case AV_SAMPLE_FMT_FLTP:
+                        let v = UnsafeRawPointer(src).advanced(by: i * 4).load(as: Float.self)
+                        UnsafeMutableRawPointer(outBuf).advanced(by: (i * channels + c) * 4)
+                            .storeBytes(of: v, as: Float.self)
+                    case AV_SAMPLE_FMT_S16P:
+                        let v = UnsafeRawPointer(src).advanced(by: i * 2).load(as: Int16.self)
+                        UnsafeMutableRawPointer(outBuf).advanced(by: (i * channels + c) * 2)
+                            .storeBytes(of: v, as: Int16.self)
+                    case AV_SAMPLE_FMT_S32P:
+                        let v = UnsafeRawPointer(src).advanced(by: i * 4).load(as: Int32.self)
+                        UnsafeMutableRawPointer(outBuf).advanced(by: (i * channels + c) * 4)
+                            .storeBytes(of: v, as: Int32.self)
+                    case AV_SAMPLE_FMT_U8P:
+                        outBuf.advanced(by: i * channels + c).pointee = src.advanced(by: i).pointee
+                    default:
+                        return false
+                    }
+                }
+            }
+            out.append(Data(bytes: outBuf, count: outBytes))
+            return true
+        } else {
+            guard let first = planes[0] else { return false }
+            let outBytes = samples * channels * info.bytes
+            out.append(Data(bytes: first, count: outBytes))
+            return true
+        }
     }
 
     // MARK: - 底层解码（同步，在后台线程执行）

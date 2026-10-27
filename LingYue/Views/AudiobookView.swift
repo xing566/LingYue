@@ -19,6 +19,10 @@ struct AudiobookView: View {
     @State private var errorText: String?
     @State private var importPresented = false
     @State private var importTxtPresented = false
+    @State private var gutenbergID = ""
+    @State private var gutenbergLoading = false
+    @State private var gutenbergError: String?
+    @State private var downloadedNovel: Novel?
 
     enum Segment: String, CaseIterable {
         case online = "在线小说"
@@ -30,6 +34,7 @@ struct AudiobookView: View {
         case network = "网络搜索"
         case web = "网页搜索"
         case custom = "自定义源"
+        case gutenberg = "公版小说"
     }
 
     /// 网页搜索：把关键词带去内置浏览器，找在线有声书/小说资源。
@@ -110,6 +115,9 @@ struct AudiobookView: View {
         .navigationDestination(for: Novel.self) { novel in
             NovelReaderView(novel: novel)
         }
+        .navigationDestination(item: $downloadedNovel) { novel in
+            NovelReaderView(novel: novel)
+        }
     }
 
     private func search() {
@@ -149,8 +157,10 @@ struct AudiobookView: View {
                 networkOnlinePane
             } else if onlineMode == .web {
                 webOnlinePane
-            } else {
+            } else if onlineMode == .custom {
                 customOnlinePane
+            } else {
+                gutenbergPane
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -275,8 +285,80 @@ struct AudiobookView: View {
         }
     }
 
-    private func loadCustom() {
-        let raw = customURL.trimmingCharacters(in: .whitespacesAndNewlines)
+    // MARK: 公版小说（古登堡）
+
+    private var gutenbergPane: some View {
+        List {
+            Section {
+                Text("古登堡中文公版经典（免费 · 点击下载并阅读）")
+                    .font(.system(size: 12)).foregroundColor(.secondary)
+            }
+            Section("精选经典") {
+                ForEach(GutenbergSource.curated) { book in
+                    Button {
+                        downloadGutenberg(book)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "book.closed")
+                                .font(.system(size: 28)).foregroundColor(.accentColor)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(book.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
+                                Text("\(book.author) · 古登堡 #\(book.id) · 可阅读/朗读")
+                                    .font(.system(size: 12)).foregroundColor(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                            if gutenbergLoading {
+                                ProgressView()
+                            }
+                        }
+                    }
+                }
+            }
+            Section("按编号添加") {
+                HStack(spacing: 8) {
+                    TextField("输入古登堡编号（如 23950）", text: $gutenbergID)
+                        .keyboardType(.numberPad)
+                        .textFieldStyle(.roundedBorder)
+                    Button("下载") {
+                        addByGutenbergID()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(Int(gutenbergID.trimmingCharacters(in: .whitespaces)) == nil || gutenbergLoading)
+                }
+            }
+            if let gutenbergError {
+                Section {
+                    Text(gutenbergError).font(.system(size: 12)).foregroundColor(.red)
+                }
+            }
+        }
+        .listStyle(.plain)
+    }
+
+    private func downloadGutenberg(_ book: GutenbergSource.Book) {
+        gutenbergLoading = true
+        gutenbergError = nil
+        Task {
+            let novel = await GutenbergSource.downloadNovel(book)
+            await MainActor.run {
+                gutenbergLoading = false
+                if let novel {
+                    novels = (novels + [novel]).sorted { $0.name < $1.name }
+                    downloadedNovel = novel
+                } else {
+                    gutenbergError = "下载失败（请检查网络，或确认该编号存在）"
+                }
+            }
+        }
+    }
+
+    private func addByGutenbergID() {
+        let raw = gutenbergID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let id = Int(raw) else { return }
+        downloadGutenberg(GutenbergSource.Book(id: id, title: "古登堡#\(id)", author: "公版"))
+    }
+
+    private func loadCustom() {        let raw = customURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !raw.isEmpty, let url = URL(string: raw) else {
             customError = "网址格式不正确"
             return

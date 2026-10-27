@@ -47,7 +47,8 @@ final class NowPlayingCenter {
                 artworkData: Data?,
                 currentTime: TimeInterval,
                 duration: TimeInterval,
-                isPlaying: Bool) {
+                isPlaying: Bool,
+                lyrics: String? = nil) {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: artist,
@@ -57,6 +58,9 @@ final class NowPlayingCenter {
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
         ]
+        if let lyrics, !lyrics.isEmpty {
+            info[MPMediaItemPropertyLyrics] = lyrics
+        }
         if let data = artworkData, let image = UIImage(data: data) {
             info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         }

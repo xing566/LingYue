@@ -57,16 +57,19 @@ final class PlayerManager {
         }
         currentSong = song
         duration = song.duration
+        // 接近结尾时才预缓存下一首（省内存），此处只标记待触发
+        pendingPrecache = true
+        precachedThisSong = false
         // 非原生格式按需转码到**内存**（不落盘、退出即释放），优先用提前缓存的下一首 Data
         if song.source == .local, FFmpegTranscoder.needsTranscode(song.fileURL) {
             transcodeThenPlay(song)
         } else {
             attachPlayer(to: song)
             resume()
-            precacheNext()
         }
         updateNowPlaying()
         autoFetchCoverIfNeeded(for: song)
+        autoFetchLyricsIfNeeded(for: song)
     }
 
     /// 提前缓存的下一首转码数据（存**内存**，不落盘）；切过去时用内存播放器秒播。
@@ -74,6 +77,11 @@ final class PlayerManager {
     private var precachedNextSongID: UUID?
     /// 内存播放用的 resource loader，需强引用防止被释放。
     private var retainedLoaders: [AnyObject] = []
+    /// 当前歌曲歌词全文（喂给锁屏 Now Playing 显示歌词）
+    private var lyricsText: String?
+    /// 接近结尾时才预缓存下一首（省内存）：本首是否等待触发 / 是否已触发
+    private var pendingPrecache = false
+    private var precachedThisSong = false
 
     /// 预转下一首到**内存**：后台把队列里下一首（若需转码）解码成 WAV Data 放内存。
     private func precacheNext() {
@@ -94,6 +102,32 @@ final class PlayerManager {
         }
     }
 
+    /// 接近结尾（剩余 ≤ 20 秒）时才预缓存下一首，省内存；不够则播放时现解码兜底。
+    private func maybePrecache() {
+        guard pendingPrecache, !precachedThisSong, duration > 0 else { return }
+        if currentTime >= max(duration - 20, 0) {
+            precachedThisSong = true
+            pendingPrecache = false
+            precacheNext()
+        }
+    }
+
+    /// 联网自动取歌词，喂给锁屏 Now Playing 显示歌词（异步，失败静默）
+    private func autoFetchLyricsIfNeeded(for song: Song) {
+        let title = song.title
+        let artist = song.artist
+        let lyricID = song.neteaseID
+        Task { [weak self] in
+            let lines = await LyricsService.fetch(title: title, artist: artist, lyricID: lyricID)
+            guard !lines.isEmpty else { return }
+            await MainActor.run {
+                guard let self else { return }
+                self.lyricsText = lines.map { $0.text }.joined(separator: "\n")
+                self.updateNowPlaying()
+            }
+        }
+    }
+
     /// 非原生格式播放：优先用内存里预缓存的下一首 Data（命中则秒播）；否则现解码成内存 Data。
     private func transcodeThenPlay(_ song: Song) {
         // 命中提前缓存的下一首 → 直接用内存数据，秒播
@@ -102,7 +136,8 @@ final class PlayerManager {
             precachedNextSongID = nil
             isTranscoding = false
             playFromMemory(data: data, song: song)
-            precacheNext()
+            pendingPrecache = true
+            precachedThisSong = false
             return
         }
         isTranscoding = true
@@ -117,7 +152,8 @@ final class PlayerManager {
                     return
                 }
                 self.playFromMemory(data: data, song: song)
-                self.precacheNext()
+                self.pendingPrecache = true
+                self.precachedThisSong = false
             }
         }
     }
@@ -277,6 +313,8 @@ final class PlayerManager {
             // 时长在 attach 时已按歌曲元数据设置；这里只更新播放进度
             self.currentTime = time.seconds.isFinite ? time.seconds : 0
             self.updateNowPlaying()
+            // 接近结尾时触发预缓存下一首
+            self.maybePrecache()
         }
         NotificationCenter.default.addObserver(
             self, selector: #selector(didPlayToEnd),
@@ -313,7 +351,8 @@ final class PlayerManager {
             artworkData: song.artworkData,
             currentTime: currentTime,
             duration: duration,
-            isPlaying: isPlaying
+            isPlaying: isPlaying,
+            lyrics: lyricsText
         )
     }
 }
