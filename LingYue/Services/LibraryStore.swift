@@ -242,6 +242,58 @@ final class LibraryStore {
         }
     }
 
+    // MARK: - 重复歌曲自检
+
+    /// 重复歌曲组：每组保留一条（最早添加），其余为可移除的重复项。
+    struct DuplicateGroup: Identifiable {
+        let id = UUID()
+        let keep: Song
+        let duplicates: [Song]
+    }
+
+    /// 按「歌名+歌手」分组查找重复（忽略大小写与空格）。
+    /// 用字典分组，复杂度 O(n)，不把音频读进内存，避免大曲库时内存爆掉。
+    func duplicateGroups() -> [DuplicateGroup] {
+        var groups: [String: [Song]] = [:]
+        for s in songs {
+            let key = normalize(s.title) + "|" + normalize(s.artist)
+            groups[key, default: []].append(s)
+        }
+        return groups.values
+            .filter { $0.count > 1 }
+            .map { group in
+                let sorted = group.sorted { $0.dateAdded < $1.dateAdded }
+                return DuplicateGroup(keep: sorted[0], duplicates: Array(sorted.dropFirst()))
+            }
+            .sorted { $0.keep.title < $1.keep.title }
+    }
+
+    /// 每个重复组的重复总数（用于设置页角标显示）
+    var duplicateCount: Int {
+        duplicateGroups().reduce(0) { $0 + $1.duplicates.count }
+    }
+
+    /// 一键去重：每组保留最早添加的一条，移除其余重复，持久化。返回移除数量。
+    @discardableResult
+    func removeDuplicates() -> Int {
+        let groups = duplicateGroups()
+        let removeIDs = Set(groups.flatMap { $0.duplicates.map(\.id) })
+        guard !removeIDs.isEmpty else { return 0 }
+        songs.removeAll { removeIDs.contains($0.id) }
+        persistSongs()
+        return removeIDs.count
+    }
+
+    private func normalize(_ s: String) -> String {
+        s.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "（", with: "")
+            .replacingOccurrences(of: "）", with: "")
+            .replacingOccurrences(of: "(", with: "")
+            .replacingOccurrences(of: ")", with: "")
+    }
+
     /// 用磁盘上已持久化的歌曲合并新扫描结果：
     /// 同一文件路径的歌曲保留持久化时的 ID，这样播放列表等按 ID 的引用在重启后依然有效。
     /// （纯数据合并，不依赖自定义哈希，不会引入崩溃。）

@@ -12,6 +12,8 @@ final class PlayerManager {
     private(set) var isPlaying = false
     private(set) var currentTime: TimeInterval = 0
     private(set) var duration: TimeInterval = 0
+    /// 正在做格式转换（按需转码中），UI 可据此显示提示
+    var isTranscoding = false
 
     var volume: Float = 0.8 { didSet { player?.volume = volume } }
     var shuffle = false
@@ -49,10 +51,42 @@ final class PlayerManager {
         }
         currentSong = song
         duration = song.duration
-        attachPlayer(to: song)
-        resume()
+        // 非原生格式按需转码（仅播放到这首才转，避免导入即占满存储）
+        if song.source == .local, FFmpegTranscoder.needsTranscode(song.fileURL) {
+            transcodeThenPlay(song)
+        } else {
+            attachPlayer(to: song)
+            resume()
+        }
         updateNowPlaying()
         autoFetchCoverIfNeeded(for: song)
+    }
+
+    /// 按需转码：FFmpeg 把当前文件转成 WAV（AppCache/Transcoded）后再播。
+    /// 转码期间置 isTranscoding，完成后把当前歌的 fileURL/duration 换成 WAV。
+    private func transcodeThenPlay(_ song: Song) {
+        isTranscoding = true
+        let inputURL = song.fileURL
+        Task { [weak self] in
+            let wavURL = await FFmpegTranscoder.decodeToWav(input: inputURL)
+            await MainActor.run {
+                guard let self else { return }
+                defer { self.isTranscoding = false }
+                guard let wavURL else {
+                    // 转码失败：保留原文件，时长未知，不播
+                    self.duration = 0
+                    return
+                }
+                var s = song
+                s.fileURL = wavURL
+                s.duration = 0 // 由 attachPlayer 从真实媒体读
+                self.currentSong = s
+                if let qi = self.queue.firstIndex(where: { $0.id == s.id }) { self.queue[qi] = s }
+                self.attachPlayer(to: s)
+                self.resume()
+                self.updateNowPlaying()
+            }
+        }
     }
 
     /// 联网自动补封面（仅本地无封面且非在线曲目时触发，异步，失败静默）

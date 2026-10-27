@@ -25,7 +25,7 @@ enum CoverService {
 
         guard let url = await coverURL(title: title, artist: artist) else { return nil }
         guard let data = await downloadData(url) else { return nil }
-        try? data.write(to: file, atomically: true)
+        try? data.write(to: file, options: .atomic)
         return data
     }
 

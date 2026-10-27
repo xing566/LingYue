@@ -98,6 +98,11 @@ struct SettingsView: View {
                 } label: {
                     Label("缓存管理", systemImage: "internaldrive")
                 }
+                NavigationLink {
+                    DuplicateCheckView()
+                } label: {
+                    Label("重复歌曲自检", systemImage: "rectangle.on.rectangle")
+                }
                 Button {
                     library.resetLibraryData()
                     Task { await library.rescan() }

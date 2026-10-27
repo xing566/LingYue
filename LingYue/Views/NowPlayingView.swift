@@ -90,6 +90,11 @@ struct NowPlayingView: View {
                             Text(song.artist)
                                 .font(.system(size: 16))
                                 .foregroundColor(.secondary)
+                            if player.isTranscoding {
+                                Text("格式转换中…")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.orange)
+                            }
                         }
                         .padding(.horizontal, 32)
                         .padding(.bottom, 24)
