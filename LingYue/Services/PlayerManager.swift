@@ -52,6 +52,30 @@ final class PlayerManager {
         attachPlayer(to: song)
         resume()
         updateNowPlaying()
+        autoFetchCoverIfNeeded(for: song)
+    }
+
+    /// 联网自动补封面（仅本地无封面且非在线曲目时触发，异步，失败静默）
+    private func autoFetchCoverIfNeeded(for song: Song) {
+        guard song.artworkData == nil, song.artworkURL == nil, song.source == .local else { return }
+        Task { [weak self] in
+            guard let data = await CoverService.fetch(title: song.title, artist: song.artist) else { return }
+            await MainActor.run {
+                self?.applyArtwork(data: data, to: song.id)
+            }
+        }
+    }
+
+    /// 更新某首歌的封面数据（当前播放 + 队列内同步）
+    func applyArtwork(data: Data, to id: UUID) {
+        guard let cur = currentSong, cur.id == id else { return }
+        var s = cur
+        s.artworkData = data
+        currentSong = s
+        if let qi = queue.firstIndex(where: { $0.id == id }) {
+            queue[qi].artworkData = data
+        }
+        updateNowPlaying()
     }
 
     func togglePlayPause() {

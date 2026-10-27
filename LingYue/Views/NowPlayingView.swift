@@ -6,6 +6,9 @@ struct NowPlayingView: View {
     @Environment(PlayerManager.self) private var player
     @Environment(\.dismiss) private var dismiss
     @State private var draggingTime: Double? = nil
+    @State private var showLyrics = false
+    @State private var lyrics: [LyricsLine] = []
+    @State private var lyricsLoading = false
 
     /// 常见视频扩展名（本地多格式解码）
     private static let videoExtensions: Set<String> = [
@@ -41,6 +44,16 @@ struct NowPlayingView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Spacer()
+                    Button {
+                        showLyrics.toggle()
+                        if showLyrics, lyrics.isEmpty, !lyricsLoading {
+                            loadLyrics()
+                        }
+                    } label: {
+                        Image(systemName: showLyrics ? "music.note.list" : "quote.bubble")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(showLyrics ? .accentColor : .secondary)
+                    }
                     Button {} label: {
                         Image(systemName: "ellipsis")
                             .foregroundColor(.secondary)
@@ -53,7 +66,9 @@ struct NowPlayingView: View {
 
                 // 封面 / 视频画面
                 if let song = player.currentSong {
-                    if isVideo, let av = player.avPlayer {
+                    if showLyrics {
+                        lyricsPanel(song: song)
+                    } else if isVideo, let av = player.avPlayer {
                         VideoPlayer(player: av)
                             .frame(width: 340, height: 192)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -65,18 +80,20 @@ struct NowPlayingView: View {
                             .padding(.bottom, 40)
                     }
 
-                    // 标题 / 歌手
-                    VStack(spacing: 6) {
-                        Text(song.displayTitle)
-                            .font(.title2.weight(.bold))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                        Text(song.artist)
-                            .font(.system(size: 16))
-                            .foregroundColor(.secondary)
+                    if !showLyrics {
+                        // 标题 / 歌手
+                        VStack(spacing: 6) {
+                            Text(song.displayTitle)
+                                .font(.title2.weight(.bold))
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                            Text(song.artist)
+                                .font(.system(size: 16))
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 32)
+                        .padding(.bottom, 24)
                     }
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, 24)
 
                     // 进度条
                     VStack(spacing: 6) {
@@ -162,6 +179,12 @@ struct NowPlayingView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onChange(of: player.currentSong?.id) { _, _ in
+            if showLyrics {
+                lyrics = []
+                loadLyrics()
+            }
+        }
     }
 
     private var repeatIcon: String {
@@ -169,6 +192,85 @@ struct NowPlayingView: View {
         case .one: return "repeat.1"
         case .all: return "repeat"
         case .off: return "repeat"
+        }
+    }
+
+    // MARK: - 歌词面板
+
+    /// 当前高亮的歌词行
+    private var activeLyricIndex: Int {
+        guard !lyrics.isEmpty else { return 0 }
+        let t = player.currentTime
+        var idx = 0
+        for i in 0..<lyrics.count where lyrics[i].time <= t { idx = i }
+        return idx
+    }
+
+    private func lyricsPanel(song: Song) -> some View {
+        Group {
+            if lyricsLoading {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("正在匹配歌词…").font(.system(size: 13)).foregroundColor(.secondary)
+                }
+            } else if lyrics.isEmpty {
+                VStack(spacing: 10) {
+                    Image(systemName: "quote.bubble").font(.system(size: 40)).foregroundColor(.secondary)
+                    Text("未找到歌词\n（联网搜索歌名+歌手匹配）").font(.system(size: 13)).foregroundColor(.secondary).multilineTextAlignment(.center)
+                }
+                .padding(24)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            // 顶部留白，保证当前行能居中
+                            Color.clear.frame(height: 130)
+                            ForEach(Array(lyrics.enumerated()), id: \.element.id) { i, line in
+                                Text(line.text)
+                                    .font(.system(size: i == activeLyricIndex ? 19 : 15, weight: i == activeLyricIndex ? .bold : .regular))
+                                    .foregroundColor(i == activeLyricIndex ? .white : .white.opacity(0.45))
+                                    .multilineTextAlignment(.center)
+                                    .frame(maxWidth: .infinity)
+                                    .id(line.id)
+                                    .padding(.horizontal, 28)
+                            }
+                            Color.clear.frame(height: 130)
+                        }
+                    }
+                    .frame(height: 340)
+                    .scrollIndicators(.hidden)
+                    .onAppear { scrollToCurrent(proxy) }
+                    .onChange(of: activeLyricIndex) { _, _ in
+                        if !showLyrics { return }
+                        scrollToCurrent(proxy)
+                    }
+                }
+            }
+        }
+        .frame(height: 360)
+        .padding(.bottom, 12)
+    }
+
+    private func scrollToCurrent(_ proxy: ScrollViewProxy) {
+        guard !lyrics.isEmpty, activeLyricIndex < lyrics.count else { return }
+        withAnimation(.easeInOut(duration: 0.35)) {
+            proxy.scrollTo(lyrics[activeLyricIndex].id, anchor: .center)
+        }
+    }
+
+    private func loadLyrics() {
+        guard let song = player.currentSong else { return }
+        lyricsLoading = true
+        lyrics = []
+        let title = song.title
+        let artist = song.artist
+        let lyricID = song.neteaseID
+        Task {
+            let lines = await LyricsService.fetch(title: title, artist: artist, lyricID: lyricID)
+            await MainActor.run {
+                lyrics = lines
+                lyricsLoading = false
+            }
         }
     }
 

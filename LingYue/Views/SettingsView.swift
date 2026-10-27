@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(LibraryStore.self) private var library
     @State private var aboutPresented = false
+    @State private var neteaseInput = ""
 
     var body: some View {
         @Bindable var library = library
@@ -61,6 +62,32 @@ struct SettingsView: View {
                     .foregroundColor(.secondary)
             } header: {
                 Text("在线歌单（自定义地址，可选）")
+            }
+
+            Section {
+                TextField("https://…/search", text: $neteaseInput)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                HStack {
+                    Button("添加实例") {
+                        NetEaseService.addCustomBaseURL(neteaseInput)
+                        neteaseInput = ""
+                    }
+                    Spacer()
+                    Button("重置为默认") {
+                        NetEaseService.resetCustomBaseURLs()
+                    }
+                    .foregroundColor(.secondary)
+                }
+                .font(.system(size: 14))
+                let custom = NetEaseService.customBaseURLs
+                Text(custom.isEmpty ? "内置 5 个网易云实例，失败自动切换。可在下方添加你自己的实例地址，实现「多接几个」。"
+                                   : "当前自定义实例：\n" + custom.joined(separator: "\n"))
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            } header: {
+                Text("网易云在线源（自定义实例，可选）")
             }
 
             Section("关于") {

@@ -28,6 +28,7 @@ struct Song: Identifiable, Codable, Hashable {
     var trackNumber: Int?
     var dateAdded: Date
     var source: MusicSourceKind
+    var neteaseID: Int?          // 网易云歌曲ID（在线歌词/封面匹配用）
 
     init(id: UUID = UUID(),
          title: String,
@@ -39,7 +40,8 @@ struct Song: Identifiable, Codable, Hashable {
          duration: TimeInterval = 0,
          trackNumber: Int? = nil,
          dateAdded: Date = Date(),
-         source: MusicSourceKind = .local) {
+         source: MusicSourceKind = .local,
+         neteaseID: Int? = nil) {
         self.id = id
         self.title = title
         self.artist = artist
@@ -51,6 +53,7 @@ struct Song: Identifiable, Codable, Hashable {
         self.trackNumber = trackNumber
         self.dateAdded = dateAdded
         self.source = source
+        self.neteaseID = neteaseID
     }
 
     /// 标题为空时的兜底显示

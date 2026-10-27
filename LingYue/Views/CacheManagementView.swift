@@ -5,6 +5,7 @@ import WebKit
 struct CacheManagementView: View {
     @State private var webCacheBytes: Int64 = 0
     @State private var localBytes: Int64 = 0
+    @State private var lyricCoverBytes: Int64 = 0
     @State private var clearing = false
     @State private var clearMessage: String?
 
@@ -35,6 +36,27 @@ struct CacheManagementView: View {
                 Text("网页缓存")
             } footer: {
                 Text("清除网页缓存不影响「缓存书签」里保存的页面（书签单独存在本地，会保留）。")
+            }
+
+            Section {
+                HStack {
+                    Label("歌词 / 封面缓存", systemImage: "photo")
+                    Spacer()
+                    Text(byteString(lyricCoverBytes)).foregroundColor(.secondary)
+                }
+                Button {
+                    clearLyricCoverCache()
+                } label: {
+                    Label("清除歌词 / 封面缓存", systemImage: "trash").foregroundColor(.red)
+                }
+                .disabled(clearing)
+                if let clearMessage {
+                    Text(clearMessage).font(.system(size: 12)).foregroundColor(.green)
+                }
+            } header: {
+                Text("App缓存")
+            } footer: {
+                Text("清除后下次播放歌曲 / 打开播放页会联网重新拉取歌词和封面。")
             }
 
             Section {
@@ -80,6 +102,10 @@ struct CacheManagementView: View {
         let novels = docs.appendingPathComponent("Novels", isDirectory: true)
         let audio = docs.appendingPathComponent("Audio", isDirectory: true)
         localBytes = dirSize(audiobooks) + dirSize(novels) + dirSize(audio)
+        // App缓存：歌词 / 封面
+        let lyrics = docs.appendingPathComponent("Lyrics", isDirectory: true)
+        let covers = docs.appendingPathComponent("Covers", isDirectory: true)
+        lyricCoverBytes = dirSize(lyrics) + dirSize(covers)
     }
 
     private func dirSize(_ dir: URL) -> Int64 {
@@ -108,6 +134,26 @@ struct CacheManagementView: View {
                 compute()
                 clearMessage = "已清除网页缓存（\(byteString(webCacheBytes))）"
             }
+        }
+    }
+
+    private func clearLyricCoverCache() {
+        clearing = true
+        clearMessage = nil
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let dirs = [docs.appendingPathComponent("Lyrics", isDirectory: true),
+                    docs.appendingPathComponent("Covers", isDirectory: true)]
+        Task { @MainActor in
+            for d in dirs {
+                if let items = try? FileManager.default.contentsOfDirectory(at: d, includingPropertiesForKeys: nil) {
+                    for item in items {
+                        try? FileManager.default.removeItem(at: item)
+                    }
+                }
+            }
+            clearing = false
+            compute()
+            clearMessage = "已清除歌词 / 封面缓存（\(byteString(lyricCoverBytes))）"
         }
     }
 
