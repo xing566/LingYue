@@ -5,6 +5,7 @@ struct SettingsView: View {
     @Environment(LibraryStore.self) private var library
     @State private var aboutPresented = false
     @State private var neteaseInput = ""
+    @State private var memTick = 0
 
     var body: some View {
         @Bindable var library = library
@@ -32,6 +33,25 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("曲库统计")
+            }
+
+            Section {
+                Group {
+                    LabeledContent("总内存", value: MemoryInfo.bytes(MemoryInfo.totalMemory))
+                    LabeledContent("已用内存", value: MemoryInfo.bytes(MemoryInfo.usedMemory))
+                    LabeledContent("剩余内存", value: MemoryInfo.bytes(MemoryInfo.availableMemory))
+                    LabeledContent("聆乐占用", value: MemoryInfo.bytes(MemoryInfo.appUsedMemory))
+                }
+                .id(memTick)
+                Button {
+                    memTick += 1
+                } label: {
+                    Label("刷新内存数据", systemImage: "arrow.clockwise")
+                }
+            } header: {
+                Text("内存（还剩多少）")
+            } footer: {
+                Text("剩余内存 ≈ 空闲 + 非活跃。聆乐占用为本 App 当前常驻内存。点「刷新」更新数值。")
             }
 
             Section {

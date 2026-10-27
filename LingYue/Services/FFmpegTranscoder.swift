@@ -49,6 +49,23 @@ enum FFmpegTranscoder {
         return nil
     }
 
+    /// 把 inputURL 解码成 WAV 数据，直接交给内存播放器（不落盘）。成功返回内存中的 WAV Data。
+    static func decodeToWavData(input inputURL: URL) async -> Data? {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("precache-\(UUID().uuidString)")
+            .appendingPathExtension("wav")
+        let ok = await Task.detached(priority: .userInitiated) { () -> Bool in
+            decode(inputPath: inputURL.path, outputPath: tmp.path)
+        }.value
+        guard ok else {
+            try? FileManager.default.removeItem(at: tmp)
+            return nil
+        }
+        let data = try? Data(contentsOf: tmp)
+        try? FileManager.default.removeItem(at: tmp)
+        return data
+    }
+
     // MARK: - 底层解码（同步，在后台线程执行）
 
     private static func decode(inputPath: String, outputPath: String) -> Bool {
