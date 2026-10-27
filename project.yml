@@ -22,6 +22,9 @@ targets:
       # 必须一次性全部嵌入，否则 dyld 逐个报缺导致启动闪退）
       - package: FFmpegKit
         product: FFmpegKit
+      # 嵌入监控小组件扩展
+      - target: LingYueWidget
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lingyue.app
@@ -52,6 +55,27 @@ targets:
           - UIInterfaceOrientationPortrait
         UIStatusBarStyle: UIStatusBarStyleLightContent
         UIUserInterfaceStyle: Dark
+
+  LingYueWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget:
+      iOS: "17.0"
+    sources:
+      - LingYueWidget
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lingyue.app.LingYueWidget
+        PRODUCT_NAME: LingYueWidget
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: LingYueWidget/Info.plist
+      properties:
+        CFBundleDisplayName: 聆乐监控
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
 schemes:
   LingYue:
