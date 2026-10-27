@@ -2,16 +2,19 @@ import WidgetKit
 import SwiftUI
 import AppIntents
 
-/// 组件外观配置：可编辑的文本颜色（长按组件 → 编辑小组件 → 选颜色）。
-struct MonitorConfig: AppIntent {
+/// 组件外观配置：可编辑的文本颜色。
+/// 注意：iOS 的 AppIntents 不支持 `Color` 作为可编辑参数（编译会报
+/// `Color` 不遵循 `_IntentValue`），因此用十六进制字符串表示，
+/// 长按组件 → 编辑小组件 → 填颜色值（如 #FFFFFF），支持 #RRGGBB。
+struct MonitorConfig: AppIntent, WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "外观"
-    static var description = IntentDescription("设置监控小组件的文字颜色")
+    static var description = IntentDescription("设置监控小组件的文字颜色（#RRGGBB）")
 
-    @Parameter(title: "文字颜色")
-    var textColor: Color
+    @Parameter(title: "文字颜色（如 #FFFFFF）")
+    var textColorHex: String
 
-    init() { textColor = .white }
-    init(textColor: Color) { self.textColor = textColor }
+    init() { textColorHex = "#FFFFFF" }
+    init(textColorHex: String) { self.textColorHex = textColorHex }
 
     func perform() async throws -> some IntentResult {
         .result()
@@ -60,7 +63,18 @@ struct MonitorEntryView: View {
     var entry: MonitorEntry
     @Environment(\.widgetFamily) private var family
 
-    private var c: Color { entry.configuration.textColor }
+    private var c: Color { hexColor(entry.configuration.textColorHex) }
+
+    private func hexColor(_ hex: String) -> Color {
+        var h = hex.trimmingCharacters(in: .whitespaces).uppercased()
+        if h.hasPrefix("#") { h.removeFirst() }
+        guard h.count == 6, let v = UInt64(h, radix: 16) else { return .white }
+        return Color(
+            red: Double((v >> 16) & 0xFF) / 255.0,
+            green: Double((v >> 8) & 0xFF) / 255.0,
+            blue: Double(v & 0xFF) / 255.0
+        )
+    }
 
     var body: some View {
         switch family {
