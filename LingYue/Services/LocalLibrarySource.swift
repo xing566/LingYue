@@ -42,7 +42,7 @@ struct LocalLibrarySource: MusicSource {
             }
         }
         // 恢复：扫描 AppCache/Transcoded 里孤立的转码 WAV。
-        // 旧版本曾「转码后删除原文件」，导致曲库里的歌消失；这里把仍在的 WAV 找回。
+        // 旧版本曾「转码后删除原文件」，导致曲库里的歌消失；这里把仍在的 WAV 找回来。
         let transDir = FFmpegTranscoder.transcodedDir
         if let transFiles = try? FileManager.default.contentsOfDirectory(
             at: transDir,
@@ -52,8 +52,19 @@ struct LocalLibrarySource: MusicSource {
                 let base = tf.deletingPathExtension().lastPathComponent
                 // 若已有同名原文件（makeSong 已优先用该 WAV），跳过避免重复
                 if songs.contains(where: { $0.fileURL.deletingPathExtension().lastPathComponent == base }) { continue }
-                if let song = await makeSong(from: tf) {
-                    songs.append(song)
+                // 迁移：把孤立转码 WAV **移入 Audio 曲库目录**，成为真正持久文件，
+                // 不再依赖缓存——这样「退出清缓存」不会把它清掉，列表重开仍在。
+                let dest = libraryURL.appendingPathComponent(tf.lastPathComponent)
+                do {
+                    if !FileManager.default.fileExists(atPath: dest.path) {
+                        try FileManager.default.moveItem(at: tf, to: dest)
+                    } else {
+                        try? FileManager.default.removeItem(at: tf) // Audio 已有同名，删冗余缓存
+                    }
+                    if let song = await makeSong(from: dest) { songs.append(song) }
+                } catch {
+                    // 迁移失败则退回直接引用缓存文件（该 WAV 会被退出清理保留，因仍被引用）
+                    if let song = await makeSong(from: tf) { songs.append(song) }
                 }
             }
         }

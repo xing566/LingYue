@@ -62,6 +62,7 @@ struct ArtworkView: View {
 /// 列表中的单行歌曲
 struct SongRowView: View {
     @Environment(PlayerManager.self) private var player
+    @Environment(LibraryStore.self) private var library
     let song: Song
     var showIndex: Int? = nil
     var trailing: AnyView? = nil
@@ -101,6 +102,32 @@ struct SongRowView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             player.play(song, in: queue)
+        }
+        .contextMenu {
+            Button {
+                player.play(song, in: queue)
+            } label: {
+                Label("播放", systemImage: "play.fill")
+            }
+            if !library.playlists.isEmpty {
+                Menu {
+                    ForEach(library.playlists) { pl in
+                        Button(pl.name) {
+                            library.addToPlaylist(pl.id, songs: [song])
+                        }
+                    }
+                } label: {
+                    Label("加入播放列表", systemImage: "text.badge.plus")
+                }
+            }
+            if song.source == .local {
+                Divider()
+                Button(role: .destructive) {
+                    library.deleteFromLibrary(song)
+                } label: {
+                    Label("删除", systemImage: "trash")
+                }
+            }
         }
     }
 }

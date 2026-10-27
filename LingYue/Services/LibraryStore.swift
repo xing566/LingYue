@@ -86,6 +86,25 @@ final class LibraryStore {
         }
     }
 
+    /// 从本地曲库删除一首歌：仅当文件位于本地 Audio 目录内才删除磁盘文件，随后重扫刷新。
+    func deleteFromLibrary(_ song: Song) {
+        guard song.source == .local,
+              let local = source as? LocalLibrarySource else { return }
+        let fm = FileManager.default
+        let base = local.libraryURL.standardizedFileURL.path
+        let path = song.fileURL.standardizedFileURL.path
+        // 只删 Audio 目录内的文件，避免误删曲库外文件
+        if path.hasPrefix(base), fm.fileExists(atPath: path) {
+            try? fm.removeItem(at: song.fileURL)
+        }
+        // 从所有播放列表里移除对该文件的引用
+        for i in playlists.indices {
+            playlists[i].songs.removeAll { $0.fileURL.standardizedFileURL.path == path }
+        }
+        persistPlaylists()
+        Task { await rescan() }
+    }
+
     // MARK: - 歌曲查询
 
     func song(withID id: UUID) -> Song? {
