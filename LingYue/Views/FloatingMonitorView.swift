@@ -8,6 +8,9 @@ struct FloatingMonitorView: View {
     @State private var memText = "—"
     @State private var thermalText = "正常"
     @State private var thermalColor: Color = .green
+    @State private var batteryText = "—"
+    @State private var batteryIcon = "battery.50percent"
+    @State private var batteryColor: Color = .green
     @State private var netText = "↓ — ↑ —"
     @State private var lastRefresh = Date()
 
@@ -20,6 +23,12 @@ struct FloatingMonitorView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(thermalColor)
                 Text(thermalText)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
+                Image(systemName: batteryIcon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(batteryColor)
+                Text(batteryText)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.white)
                 Text(netText)
@@ -52,6 +61,28 @@ struct FloatingMonitorView: View {
         case .serious:  thermalText = "偏热"; thermalColor = .orange
         case .critical: thermalText = "过热"; thermalColor = .red
         @unknown default: thermalText = "正常"; thermalColor = .green
+        }
+        // 电池电量与充电状态
+        let dev = UIDevice.current
+        dev.isBatteryMonitoringEnabled = true
+        let level = dev.batteryLevel
+        if level < 0 {
+            batteryText = "—"
+            batteryIcon = "battery.0percent"
+        } else {
+            let pct = Int((level * 100).rounded())
+            batteryText = "\(pct)%"
+            switch pct {
+            case 80...100: batteryIcon = "battery.100percent"
+            case 60..<80:  batteryIcon = "battery.75percent"
+            case 40..<60:  batteryIcon = "battery.50percent"
+            case 20..<40:  batteryIcon = "battery.25percent"
+            default:       batteryIcon = "battery.0percent"
+            }
+            if dev.batteryState == .charging {
+                batteryIcon = "battery.100percent.bolt"
+            }
+            batteryColor = pct <= 20 ? .red : .green
         }
         memText = MemoryInfo.bytes(MemoryInfo.availableMemory)
         let now = Date()
