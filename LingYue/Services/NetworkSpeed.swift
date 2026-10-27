@@ -48,4 +48,10 @@ enum NetworkSpeed {
         if v >= 1024 { return String(format: "%.0fK", v / 1024) }
         return "\(Int(v))B"
     }
+
+    /// 精确到 KB/s 的数字。
+    static func bytesPrecise(_ v: Double) -> String {
+        let kb = v / 1024
+        return String(format: "%.1f KB/s", kb)
+    }
 }

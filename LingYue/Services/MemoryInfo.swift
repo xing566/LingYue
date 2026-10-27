@@ -54,4 +54,10 @@ enum MemoryInfo {
         if v >= 1024 { return String(format: "%.0f KB", v / 1024) }
         return "\(b) B"
     }
+
+    /// 精确到 MB 的数字（不省略小数，显示真实数值）。
+    static func bytesPrecise(_ b: UInt64) -> String {
+        let mb = Double(b) / 1_048_576
+        return String(format: "%.1f MB", mb)
+    }
 }

@@ -62,7 +62,7 @@ struct FloatingMonitorView: View {
         case .critical: thermalText = "过热"; thermalColor = .red
         @unknown default: thermalText = "正常"; thermalColor = .green
         }
-        // 电池电量与充电状态
+        // 电池电量与充电状态（iOS 只提供百分比，精确到个位显示为纯数字）
         let dev = UIDevice.current
         dev.isBatteryMonitoringEnabled = true
         let level = dev.batteryLevel
@@ -71,7 +71,7 @@ struct FloatingMonitorView: View {
             batteryIcon = "battery.0percent"
         } else {
             let pct = Int((level * 100).rounded())
-            batteryText = "\(pct)%"
+            batteryText = "\(pct)"
             switch pct {
             case 80...100: batteryIcon = "battery.100percent"
             case 60..<80:  batteryIcon = "battery.75percent"
@@ -84,10 +84,10 @@ struct FloatingMonitorView: View {
             }
             batteryColor = pct <= 20 ? .red : .green
         }
-        memText = MemoryInfo.bytes(MemoryInfo.availableMemory)
+        memText = MemoryInfo.bytesPrecise(MemoryInfo.availableMemory)
         let now = Date()
         let s = NetworkSpeed.sample(elapsedSeconds: now.timeIntervalSince(lastRefresh))
         lastRefresh = now
-        netText = "↓\(NetworkSpeed.bytesPerSec(s.down)) ↑\(NetworkSpeed.bytesPerSec(s.up))"
+        netText = "↓\(NetworkSpeed.bytesPrecise(s.down)) ↑\(NetworkSpeed.bytesPrecise(s.up))"
     }
 }
