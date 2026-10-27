@@ -25,6 +25,9 @@ targets:
       # 嵌入监控小组件扩展
       - target: LingYueWidget
         embed: true
+      # 嵌入控制中心模块（iOS 18）
+      - target: LingYueControl
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lingyue.app
@@ -51,6 +54,10 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.lingyue.app
+            CFBundleURLSchemes:
+              - lingyue
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIStatusBarStyle: UIStatusBarStyleLightContent
@@ -76,6 +83,28 @@ targets:
         CFBundleDisplayName: 聆乐监控
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  LingYueControl:
+    type: app-extension
+    platform: iOS
+    deploymentTarget:
+      iOS: "18.0"
+    sources:
+      - LingYueControl
+      - LingYueWidget/MetricsReader.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lingyue.app.LingYueControl
+        PRODUCT_NAME: LingYueControl
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_STYLE: Automatic
+    info:
+      path: LingYueControl/Info.plist
+      properties:
+        CFBundleDisplayName: 聆乐监控
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.control-widget
 
 schemes:
   LingYue:

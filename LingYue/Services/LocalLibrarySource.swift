@@ -6,10 +6,14 @@ struct LocalLibrarySource: MusicSource {
 
     let kind: MusicSourceKind = .local
 
-    /// 支持导入的音频 + 视频扩展名（AVPlayer 负责实际解码）
+    /// 支持导入的音频 + 视频扩展名（FFmpegKit 负责实际解码，故含全部常见音频格式）。
     private static let audioExtensions: Set<String> = [
-        "mp3", "m4a", "aac", "wav", "flac", "aiff", "caf", "alac", "mp4", "m4b",
-        "m4v", "mov", "mkv", "avi", "webm", "flv", "ts", "3gp", "mpg", "mpeg", "wmv", "ogv"
+        // 音频
+        "mp3", "m4a", "aac", "wav", "flac", "aiff", "caf", "alac", "m4b",
+        "wma", "ogg", "opus", "mka", "ape", "wv", "mid", "mp2",
+        // 视频（含音轨，可作音乐播放）
+        "mp4", "m4v", "mov", "mkv", "avi", "webm", "flv", "ts", "3gp", "3g2",
+        "mpg", "mpeg", "wmv", "ogv"
     ]
 
     /// 沙盒 Documents 目录
