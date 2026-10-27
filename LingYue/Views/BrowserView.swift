@@ -245,6 +245,14 @@ struct BrowserView: View {
         let title = model.pageTitle.isEmpty ? (address.isEmpty ? urlString : address) : model.pageTitle
         BrowserStore.append(SavedPage(title: title, urlString: urlString))
         savedPages = BrowserStore.load()
+        // 同时把页面 HTML 缓存到 AppCache/Web（手机「文件」可见，界面删除时一并删除）
+        if let webView = model.activeTab?.webView {
+            webView.evaluateJavaScript("document.documentElement.outerHTML") { result, _ in
+                if let html = result as? String, !html.isEmpty {
+                    WebCache.save(urlString: urlString, title: title, html: html)
+                }
+            }
+        }
         // 提示
         withAnimation { showSavedToast = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
@@ -374,8 +382,10 @@ struct CacheListView: View {
                             }
                         }
                         .onDelete { offsets in
+                            let removed = offsets.map { pages[$0] }
                             pages.remove(atOffsets: offsets)
                             BrowserStore.save(pages)
+                            for p in removed { WebCache.remove(for: p.urlString) }
                         }
                     }
                     .listStyle(.plain)
@@ -411,5 +421,35 @@ enum BrowserStore {
         pages.removeAll { $0.urlString == page.urlString }
         pages.insert(page, at: 0)
         save(pages)
+    }
+}
+
+/// 网页缓存：把浏览过的页面 HTML 保存到 AppCache/Web（手机「文件 → 我的 iPhone → 聆乐 → AppCache → Web」可见），
+/// 随缓存书签一起增删，界面删除时真正删掉这些缓存文件。
+enum WebCache {
+    static var cacheDir: URL {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AppCache", isDirectory: true)
+            .appendingPathComponent("Web", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+    private static func key(for urlString: String) -> String {
+        urlString.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? String(urlString.hashValue)
+    }
+    /// 保存页面 HTML 与元信息（标题/URL）。同名覆盖。
+    static func save(urlString: String, title: String, html: String) {
+        let base = cacheDir.appendingPathComponent(key(for: urlString))
+        try? html.data(using: .utf8)?.write(to: base.appendingPathExtension("html"), options: .atomic)
+        let meta: [String: String] = ["title": title, "url": urlString]
+        if let md = try? JSONEncoder().encode(meta) {
+            try? md.write(to: base.appendingPathExtension("json"), options: .atomic)
+        }
+    }
+    /// 删除某 URL 对应的缓存文件（与缓存书签删除联动）。
+    static func remove(for urlString: String) {
+        let base = cacheDir.appendingPathComponent(key(for: urlString))
+        try? FileManager.default.removeItem(at: base.appendingPathExtension("html"))
+        try? FileManager.default.removeItem(at: base.appendingPathExtension("json"))
     }
 }

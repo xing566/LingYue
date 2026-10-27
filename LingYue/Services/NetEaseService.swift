@@ -76,24 +76,48 @@ enum NetEaseService {
         struct UrlItem: Decodable { let url: String? }
     }
 
-    // MARK: - 请求（多实例自动切换）
+    // MARK: - 请求（多实例自动切换，并发 + 总超时兜底）
 
+    /// 并发尝试所有实例，返回第一个 HTTP 200 响应；整个流程最多等 ~8s 即失败。
+    /// 这样歌词/封面查找不会因某个实例卡死而无限转圈（此前最长可达 60s+）。
     private static func requestJSON(_ pathAndQuery: String) async throws -> Data {
-        var lastError: Error = URLError(.badURL)
-        for base in allBaseURLs {
-            guard let url = URL(string: base + pathAndQuery) else { continue }
-            do {
-                var req = URLRequest(url: url)
-                req.timeoutInterval = 12
-                let (data, resp) = try await URLSession.shared.data(for: req)
-                if let http = resp as? HTTPURLResponse, http.statusCode == 200 {
-                    return data
-                }
-            } catch {
-                lastError = error
+        let bases = allBaseURLs
+        var reqs: [URLRequest] = []
+        for base in bases {
+            if let url = URL(string: base + pathAndQuery) {
+                var r = URLRequest(url: url)
+                r.timeoutInterval = 8
+                reqs.append(r)
             }
         }
-        throw lastError
+        guard !reqs.isEmpty else { throw URLError(.badURL) }
+
+        return try await withThrowingTaskGroup(of: Data.self, returning: Data.self) { group in
+            for r in reqs {
+                group.addTask {
+                    let (d, resp) = try await URLSession.shared.data(for: r)
+                    if let h = resp as? HTTPURLResponse, h.statusCode == 200, !d.isEmpty { return d }
+                    throw URLError(.badServerResponse)
+                }
+            }
+            // 兜底超时：最多等 8s，随后整体失败
+            group.addTask {
+                try await Task.sleep(nanoseconds: 8_000_000_000)
+                throw URLError(.timedOut)
+            }
+            var lastError: Error = URLError(.cannotFindHost)
+            while true {
+                let result: Data?
+                do {
+                    result = try await group.next()
+                } catch {
+                    lastError = error
+                    continue
+                }
+                if let result { return result }
+                throw lastError
+            }
+        }
     }
 
     // MARK: - 搜索（返回统一在线候选）

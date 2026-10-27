@@ -17,15 +17,26 @@ enum FFmpegTranscoder {
         !nativelySupported.contains(url.pathExtension.lowercased())
     }
 
-    /// 把 inputURL 解码成 AppCache/Transcoded 下的 .wav。成功返回 wav URL。
-    static func decodeToWav(input inputURL: URL) async -> URL? {
-        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    /// AppCache/Transcoded 目录（转码 WAV 所在处）
+    static var transcodedDir: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("AppCache", isDirectory: true)
             .appendingPathComponent("Transcoded", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    }
+
+    /// 清空已转码的 WAV（切到下一首时调用，保证同一时刻只保留当前播放的一首转码文件）。
+    static func clearTranscoded() {
+        if let items = try? FileManager.default.contentsOfDirectory(at: transcodedDir, includingPropertiesForKeys: nil) {
+            for item in items { try? FileManager.default.removeItem(at: item) }
+        }
+    }
+
+    /// 把 inputURL 解码成 AppCache/Transcoded 下的 .wav。成功返回 wav URL。
+    static func decodeToWav(input inputURL: URL) async -> URL? {
+        try? FileManager.default.createDirectory(at: transcodedDir, withIntermediateDirectories: true)
         // 用输入文件名（不含原扩展名）作为输出名，避免同名冲突
         let base = inputURL.deletingPathExtension().lastPathComponent
-        let outputURL = dir.appendingPathComponent(base).appendingPathExtension("wav")
+        let outputURL = transcodedDir.appendingPathComponent(base).appendingPathExtension("wav")
         let ok = await Task.detached(priority: .userInitiated) { () -> Bool in
             decode(inputPath: inputURL.path, outputPath: outputURL.path)
         }.value

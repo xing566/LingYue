@@ -68,6 +68,8 @@ final class PlayerManager {
         isTranscoding = true
         let inputURL = song.fileURL
         Task { [weak self] in
+            // 切到下一首要转码的歌时，先清掉上一首的转码 WAV，保证同一时刻只保留一首
+            FFmpegTranscoder.clearTranscoded()
             let wavURL = await FFmpegTranscoder.decodeToWav(input: inputURL)
             await MainActor.run {
                 guard let self else { return }
