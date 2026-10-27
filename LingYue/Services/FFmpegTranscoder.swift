@@ -24,7 +24,13 @@ enum FFmpegTranscoder {
             .appendingPathComponent("Transcoded", isDirectory: true)
     }
 
-    /// 清空已转码的 WAV（切到下一首时调用，保证同一时刻只保留当前播放的一首转码文件）。
+    /// 某输入文件对应转码后的 WAV URL（Transcoded/<同名>.wav）
+    static func wavURL(for input: URL) -> URL {
+        let base = input.deletingPathExtension().lastPathComponent
+        return transcodedDir.appendingPathComponent(base).appendingPathExtension("wav")
+    }
+
+    /// 清空已转码的 WAV（当前不使用，转由 PlayerManager 按需裁剪）
     static func clearTranscoded() {
         if let items = try? FileManager.default.contentsOfDirectory(at: transcodedDir, includingPropertiesForKeys: nil) {
             for item in items { try? FileManager.default.removeItem(at: item) }
@@ -34,9 +40,7 @@ enum FFmpegTranscoder {
     /// 把 inputURL 解码成 AppCache/Transcoded 下的 .wav。成功返回 wav URL。
     static func decodeToWav(input inputURL: URL) async -> URL? {
         try? FileManager.default.createDirectory(at: transcodedDir, withIntermediateDirectories: true)
-        // 用输入文件名（不含原扩展名）作为输出名，避免同名冲突
-        let base = inputURL.deletingPathExtension().lastPathComponent
-        let outputURL = transcodedDir.appendingPathComponent(base).appendingPathExtension("wav")
+        let outputURL = wavURL(for: inputURL)
         let ok = await Task.detached(priority: .userInitiated) { () -> Bool in
             decode(inputPath: inputURL.path, outputPath: outputURL.path)
         }.value

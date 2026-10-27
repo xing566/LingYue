@@ -51,29 +51,61 @@ final class PlayerManager {
         }
         currentSong = song
         duration = song.duration
-        // 非原生格式按需转码（仅播放到这首才转，避免导入即占满存储）
+        // 非原生格式按需转码（优先用提前缓存的 WAV；没有才现转）
         if song.source == .local, FFmpegTranscoder.needsTranscode(song.fileURL) {
             transcodeThenPlay(song)
         } else {
             attachPlayer(to: song)
             resume()
+            precacheNext()
         }
         updateNowPlaying()
         autoFetchCoverIfNeeded(for: song)
     }
 
+    /// 提前缓存的下一首转码 WAV（切过去时秒播，不用再等转码）
+    private var precachedNextWav: URL?
+
+    /// 当前播放结束后预转下一首：后台把队列里下一首（若需转码）转成 WAV 缓存好。
+    /// 同时裁剪 Transcoded，只保留「当前这首 + 提前缓存的下一首」。
+    private func precacheNext() {
+        guard let current = currentSong,
+              let idx = queue.firstIndex(where: { $0.id == current.id }),
+              idx + 1 < queue.count else { return }
+        let next = queue[idx + 1]
+        guard next.source == .local, FFmpegTranscoder.needsTranscode(next.fileURL) else { return }
+        let target = FFmpegTranscoder.wavURL(for: next.fileURL)
+        if FileManager.default.fileExists(atPath: target.path) {
+            precachedNextWav = target
+            pruneTranscoded(keep: [current.fileURL, target])
+            return
+        }
+        let input = next.fileURL
+        Task { [weak self] in
+            let wav = await FFmpegTranscoder.decodeToWav(input: input)
+            await MainActor.run {
+                guard let self, let wav else { return }
+                self.precachedNextWav = wav
+                let keep = [self.currentSong?.fileURL ?? wav, wav]
+                self.pruneTranscoded(keep: keep)
+            }
+        }
+    }
+
     /// 按需转码：FFmpeg 把当前文件转成 WAV（AppCache/Transcoded）后再播。
-    /// 转码期间置 isTranscoding，完成后把当前歌的 fileURL/duration 换成 WAV。
+    /// 优先使用 precacheNext 提前缓存的 WAV，命中则秒播不等待。
     private func transcodeThenPlay(_ song: Song) {
         isTranscoding = true
         let inputURL = song.fileURL
+        let target = FFmpegTranscoder.wavURL(for: inputURL)
+        let cached = (precachedNextWav == target) && FileManager.default.fileExists(atPath: target.path)
+            ? target : nil
         Task { [weak self] in
-            // 切到下一首要转码的歌时，先清掉上一首的转码 WAV，保证同一时刻只保留一首
-            FFmpegTranscoder.clearTranscoded()
-            let wavURL = await FFmpegTranscoder.decodeToWav(input: inputURL)
+            let wavURL = cached ?? await FFmpegTranscoder.decodeToWav(input: inputURL)
             await MainActor.run {
                 guard let self else { return }
                 defer { self.isTranscoding = false }
+                self.precachedNextWav = nil
                 guard let wavURL else {
                     // 转码失败：保留原文件，时长未知，不播
                     self.duration = 0
@@ -87,6 +119,19 @@ final class PlayerManager {
                 self.attachPlayer(to: s)
                 self.resume()
                 self.updateNowPlaying()
+                self.precacheNext()
+            }
+        }
+    }
+
+    /// 裁剪 Transcoded 目录：只保留 keep 里的文件（当前播放 + 提前缓存的下一首）。
+    private func pruneTranscoded(keep: [URL]) {
+        let keepSet = Set(keep.map { $0.standardizedFileURL })
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: FFmpegTranscoder.transcodedDir, includingPropertiesForKeys: nil) else { return }
+        for item in items {
+            if !keepSet.contains(item.standardizedFileURL) {
+                try? FileManager.default.removeItem(at: item)
             }
         }
     }

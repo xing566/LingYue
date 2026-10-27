@@ -39,6 +39,7 @@ struct NowPlayingView: View {
                             .font(.system(size: 18, weight: .medium))
                             .foregroundColor(.primary)
                     }
+                    .padding(.trailing, 18)   // 左上角往中间收 ~0.5cm
                     Spacer()
                     Text("正在播放")
                         .font(.subheadline)
@@ -58,6 +59,7 @@ struct NowPlayingView: View {
                         Image(systemName: "ellipsis")
                             .foregroundColor(.secondary)
                     }
+                    .padding(.leading, 18)    // 右上角往中间收 ~0.5cm
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 20)
