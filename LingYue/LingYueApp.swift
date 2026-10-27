@@ -12,6 +12,8 @@ struct LingYueApp: App {
         _libraryStore = State(initialValue: store)
         // 播放器与曲库共用同一个 MusicSource，便于日后切换为在线源
         _player = State(initialValue: PlayerManager(source: store.source))
+        // 首次启动统一请求通知、蓝牙等系统权限
+        PermissionRequester.requestAll()
     }
 
     var body: some Scene {

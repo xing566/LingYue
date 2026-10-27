@@ -55,6 +55,8 @@ targets:
           - CFBundleURLName: com.lingyue.app
             CFBundleURLSchemes:
               - lingyue
+        NSLocalNetworkUsageDescription: 聆乐需要访问本地网络，以搜索在线音乐、歌词与封面、在线小说。
+        NSBluetoothAlwaysUsageDescription: 聆乐需要使用蓝牙连接耳机或音箱播放音频。
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIStatusBarStyle: UIStatusBarStyleLightContent
