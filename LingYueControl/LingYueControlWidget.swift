@@ -1,6 +1,6 @@
 import WidgetKit
 import SwiftUI
-import ControlWidget
+import ControlCenter
 import AppIntents
 
 /// 点击控制模块时的动作：通过 URL scheme 打开聆乐 App。
@@ -15,10 +15,7 @@ struct OpenLingYue: AppIntent {
 struct LingYueControlWidget: ControlWidget {
     var body: some ControlWidgetConfiguration {
         ControlWidgetButton(action: OpenLingYue()) {
-            ControlWidgetLabel(
-                icon: "thermometer.medium",
-                title: LocalizedStringResource(stringLiteral: monitorText())
-            )
+            Label(monitorText(), systemImage: "thermometer.medium")
         }
         .configurationDisplayName("聆乐监控")
         .description("显示温度与网速（流量）")
