@@ -102,10 +102,9 @@ struct CacheManagementView: View {
         let novels = docs.appendingPathComponent("Novels", isDirectory: true)
         let audio = docs.appendingPathComponent("Audio", isDirectory: true)
         localBytes = dirSize(audiobooks) + dirSize(novels) + dirSize(audio)
-        // App缓存：歌词 / 封面
-        let lyrics = docs.appendingPathComponent("Lyrics", isDirectory: true)
-        let covers = docs.appendingPathComponent("Covers", isDirectory: true)
-        lyricCoverBytes = dirSize(lyrics) + dirSize(covers)
+        // App缓存：AppCache/Lyrics + AppCache/Covers（手机「文件」里可见的 AppCache 文件夹）
+        let appCache = docs.appendingPathComponent("AppCache", isDirectory: true)
+        lyricCoverBytes = dirSize(appCache)
     }
 
     private func dirSize(_ dir: URL) -> Int64 {
@@ -141,14 +140,11 @@ struct CacheManagementView: View {
         clearing = true
         clearMessage = nil
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dirs = [docs.appendingPathComponent("Lyrics", isDirectory: true),
-                    docs.appendingPathComponent("Covers", isDirectory: true)]
+        let appCache = docs.appendingPathComponent("AppCache", isDirectory: true)
         Task { @MainActor in
-            for d in dirs {
-                if let items = try? FileManager.default.contentsOfDirectory(at: d, includingPropertiesForKeys: nil) {
-                    for item in items {
-                        try? FileManager.default.removeItem(at: item)
-                    }
+            if let items = try? FileManager.default.contentsOfDirectory(at: appCache, includingPropertiesForKeys: nil) {
+                for item in items {
+                    try? FileManager.default.removeItem(at: item)
                 }
             }
             clearing = false

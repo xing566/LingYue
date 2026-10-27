@@ -12,6 +12,7 @@ enum LyricsService {
 
     private static var cacheDir: URL {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AppCache", isDirectory: true)
             .appendingPathComponent("Lyrics", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
