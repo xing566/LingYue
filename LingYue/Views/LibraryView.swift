@@ -80,7 +80,13 @@ struct LibraryView: View {
             }
         }
         .task(id: sourceMode) {
-            if sourceMode == .online { await library.fetchOnlineSongs() }
+            if sourceMode == .online {
+                await library.fetchOnlineSongs()
+            } else {
+                // 每次进入/切回「本地曲库」都重新扫描磁盘，
+                // 保证 Audio 目录里的文件（包括退出后仍存在的原文件）一定显示出来。
+                await library.rescan()
+            }
         }
     }
 
@@ -169,6 +175,9 @@ struct LibraryView: View {
             }
         }
         .listStyle(.plain)
+        .refreshable {
+            await library.rescan()
+        }
     }
 
     // MARK: 专辑
