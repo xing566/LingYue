@@ -19,7 +19,7 @@ struct ArtistDetailView: View {
                     }
                 }
                 ForEach(Array(songs.enumerated()), id: \.element.id) { idx, song in
-                    SongRowView(song: song, showIndex: idx)
+                    SongRowView(song: song, showIndex: idx, queue: songs)
                 }
             } else {
                 Text("该歌手暂无歌曲").foregroundColor(.secondary)

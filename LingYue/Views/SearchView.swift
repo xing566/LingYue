@@ -25,7 +25,7 @@ struct SearchView: View {
                 List {
                     Section("歌曲 \(results.count)") {
                         ForEach(results) { song in
-                            SongRowView(song: song)
+                            SongRowView(song: song, queue: results)
                         }
                     }
                 }

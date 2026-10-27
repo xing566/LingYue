@@ -64,24 +64,17 @@ struct LocalLibrarySource: MusicSource {
     /// 从单个文件构建 Song，并提取元数据。
     /// 非原生格式（WMA 等）不再在导入时全量转码（避免瞬间占满磁盘）；
     /// 播放时由 PlayerManager 按需转成 WAV（AppCache/Transcoded，磁盘可见）。
-    /// 若该文件已存在对应转码 WAV，则直接用它（兼容旧版删掉原文件的情况）。
+    /// 歌曲的 fileURL **始终指向真实源文件**，不指向转码 WAV——避免同名 WAV 冲突导致「读错 / 消失」。
+    /// （被旧版删掉原文件的歌，由 fetchSongs 扫描 Transcoded 里的 WAV 找回。）
     func makeSong(from fileURL: URL) async -> Song? {
-        var playURL = fileURL
-        var meta = await extractMetadata(from: fileURL)
-        if FFmpegTranscoder.needsTranscode(fileURL) {
-            let wav = FFmpegTranscoder.wavURL(for: fileURL)
-            if FileManager.default.fileExists(atPath: wav.path) {
-                playURL = wav
-                meta = await extractMetadata(from: wav)
-            }
-        }
+        let meta = await extractMetadata(from: fileURL)
         let creation = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
         return Song(
             title: meta.title,
             artist: meta.artist,
             album: meta.album,
             artworkData: meta.artwork,
-            fileURL: playURL,
+            fileURL: fileURL,
             duration: meta.duration,
             trackNumber: meta.trackNumber,
             dateAdded: creation

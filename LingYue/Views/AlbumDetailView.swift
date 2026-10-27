@@ -35,7 +35,7 @@ struct AlbumDetailView: View {
             }
             Section {
                 ForEach(Array(album.songs.enumerated()), id: \.element.id) { idx, song in
-                    SongRowView(song: song, showIndex: idx)
+                    SongRowView(song: song, showIndex: idx, queue: album.songs)
                 }
             }
         }

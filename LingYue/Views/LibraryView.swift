@@ -137,7 +137,7 @@ struct LibraryView: View {
                         }
                     }
                     ForEach(library.onlineSongs) { song in
-                        SongRowView(song: song, trailing: AnyView(
+                        SongRowView(song: song, queue: library.onlineSongs, trailing: AnyView(
                             Image(systemName: "arrow.down.to.line.compact")
                                 .foregroundColor(.secondary)
                         ))
@@ -165,7 +165,7 @@ struct LibraryView: View {
                 }
             }
             ForEach(library.songs) { song in
-                SongRowView(song: song)
+                SongRowView(song: song, queue: library.songs)
             }
         }
         .listStyle(.plain)

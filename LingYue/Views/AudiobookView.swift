@@ -322,7 +322,7 @@ struct AudiobookView: View {
                         }
                     }
                     ForEach(localSongs) { song in
-                        SongRowView(song: song)
+                        SongRowView(song: song, queue: localSongs)
                     }
                     .onDelete { offsets in
                         for i in offsets { LocalAudiobookSource.delete(localSongs[i]) }
@@ -399,7 +399,7 @@ struct BookDetailView: View {
                 }
             }
             ForEach(Array(book.sections.enumerated()), id: \.element.id) { idx, song in
-                SongRowView(song: song, showIndex: idx)
+                SongRowView(song: song, showIndex: idx, queue: book.sections)
                     .simultaneousGesture(TapGesture().onEnded { _ in cacheChapter(idx) })
             }
         }

@@ -65,6 +65,8 @@ struct SongRowView: View {
     let song: Song
     var showIndex: Int? = nil
     var trailing: AnyView? = nil
+    /// 点行时传入的整列表（作为播放队列，这样「上一首/下一首/循环」才有后续歌曲可切）。
+    var queue: [Song]? = nil
 
     var body: some View {
         HStack(spacing: 12) {
@@ -98,7 +100,7 @@ struct SongRowView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {
-            player.play(song)
+            player.play(song, in: queue)
         }
     }
 }

@@ -9,6 +9,7 @@ struct MiniPlayerView: View {
         HStack(spacing: 12) {
             if let song = player.currentSong {
                 ArtworkView(song: song, size: 44)
+                    .onTapGesture { onTap() }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(song.displayTitle)
                         .font(.system(size: 15, weight: .medium))
@@ -19,7 +20,24 @@ struct MiniPlayerView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { onTap() }
                 Spacer()
+                Button {
+                    let next = (player.repeatMode.rawValue + 1) % 3
+                    player.repeatMode = PlayerManager.RepeatMode(rawValue: next) ?? .off
+                } label: {
+                    Image(systemName: repeatIcon)
+                        .font(.system(size: 17))
+                        .foregroundColor(player.repeatMode != .off ? .accentColor : .secondary)
+                }
+                Button {
+                    player.playPrevious()
+                } label: {
+                    Image(systemName: "backward.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.secondary)
+                }
                 Button {
                     player.togglePlayPause()
                 } label: {
@@ -44,7 +62,13 @@ struct MiniPlayerView: View {
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
         )
         .contentShape(Rectangle())
-        .onTapGesture { onTap() }
         .shadow(color: .black.opacity(0.4), radius: 12, x: 0, y: 4)
+    }
+
+    private var repeatIcon: String {
+        switch player.repeatMode {
+        case .one: return "repeat.1"
+        default: return "repeat"
+        }
     }
 }
