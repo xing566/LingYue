@@ -170,6 +170,15 @@ struct NowPlayingView: View {
                     }
                     .padding(.top, 28)
 
+                    // 转码提示：非原生格式按需转码（内存方案）中
+                    if player.isTranscoding {
+                        HStack(spacing: 8) {
+                            ProgressView().tint(.accentColor)
+                            Text("正在转码…").font(.system(size: 13)).foregroundColor(.white.opacity(0.8))
+                        }
+                        .padding(.top, 12)
+                    }
+
                     // 音量
                     HStack(spacing: 12) {
                         Image(systemName: "speaker.fill").foregroundColor(.secondary).font(.system(size: 13))

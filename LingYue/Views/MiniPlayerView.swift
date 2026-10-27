@@ -15,10 +15,17 @@ struct MiniPlayerView: View {
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(.primary)
                         .lineLimit(1)
-                    Text(song.artist)
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
+                    if player.isTranscoding {
+                        HStack(spacing: 4) {
+                            ProgressView().controlSize(.mini)
+                            Text("转码中").font(.system(size: 11)).foregroundColor(.secondary)
+                        }
+                    } else {
+                        Text(song.artist)
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { onTap() }
