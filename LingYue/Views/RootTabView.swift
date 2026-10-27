@@ -49,6 +49,12 @@ struct RootTabView: View {
         .sheet(isPresented: $showNowPlaying) {
             NowPlayingView()
         }
+        .overlay(alignment: .topTrailing) {
+            // 可拖动悬浮监控（温度/内存），设置里可开关
+            FloatingMonitorView()
+                .padding(.top, 8)
+                .padding(.trailing, 12)
+        }
         .task {
             // 启动时扫描本地曲库
             await library.rescan()

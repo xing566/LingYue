@@ -112,6 +112,7 @@ struct SettingsView: View {
 
             Section("关于") {
                 Toggle("网页广告屏蔽", isOn: adBlockBinding)
+                Toggle("悬浮监控（温度/内存/网速，可拖动）", isOn: floatingMonitorBinding)
                     .tint(.accentColor)
                 NavigationLink {
                     CacheManagementView()
@@ -164,6 +165,14 @@ struct SettingsView: View {
         Binding(
             get: { BrowserModel.isAdEnabled },
             set: { UserDefaults.standard.set($0, forKey: BrowserModel.adEnabledKey) }
+        )
+    }
+
+    /// 悬浮监控开关（存 UserDefaults，RootTabView 读取生效）。
+    private var floatingMonitorBinding: Binding<Bool> {
+        Binding(
+            get: { UserDefaults.standard.object(forKey: "floatingMonitorEnabled") as? Bool ?? false },
+            set: { UserDefaults.standard.set($0, forKey: "floatingMonitorEnabled") }
         )
     }
 }
