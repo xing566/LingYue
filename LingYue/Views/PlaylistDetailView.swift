@@ -42,7 +42,7 @@ struct PlaylistDetailView: View {
                         }
                         Section {
                             ForEach(Array(songs.enumerated()), id: \.element.id) { idx, song in
-                                SongRowView(song: song, showIndex: idx, queue: songs, trailing: AnyView(
+                                SongRowView(song: song, showIndex: idx, trailing: AnyView(
                                     Button {
                                         library.removeSong(song, from: pl.id)
                                     } label: {
@@ -50,7 +50,7 @@ struct PlaylistDetailView: View {
                                             .foregroundColor(.secondary)
                                     }
                                     .buttonStyle(.borderless)
-                                ))
+                                ), queue: songs)
                             }
                         }
                     } else {
