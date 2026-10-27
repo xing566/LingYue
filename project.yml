@@ -17,46 +17,11 @@ targets:
     sources:
       - LingYue
     dependencies:
-      # FFmpeg 核心解码库 + 其全部运行时附属库（Libavcodec 全功能版依赖这些，
+      # 引用完整 FFmpegKit 产品：它声明并嵌入全部附属库
+      # （Libavcodec 全功能版运行时依赖 libzvbi/libopus/libssl/libass 等，
       # 必须一次性全部嵌入，否则 dyld 逐个报缺导致启动闪退）
       - package: FFmpegKit
-        product: Libavcodec
-      - package: FFmpegKit
-        product: Libavformat
-      - package: FFmpegKit
-        product: Libavutil
-      - package: FFmpegKit
-        product: Libswresample
-      - package: FFmpegKit
-        product: Libswscale
-      - package: FFmpegKit
-        product: Libavfilter
-      - package: FFmpegKit
-        product: Libavdevice
-      - package: FFmpegKit
-        product: libzvbi
-      - package: FFmpegKit
-        product: libsrt
-      - package: FFmpegKit
-        product: libssl
-      - package: FFmpegKit
-        product: libcrypto
-      - package: FFmpegKit
-        product: libopus
-      - package: FFmpegKit
-        product: libass
-      - package: FFmpegKit
-        product: libfreetype
-      - package: FFmpegKit
-        product: libfribidi
-      - package: FFmpegKit
-        product: libharfbuzz
-      - package: FFmpegKit
-        product: libfontconfig
-      - package: FFmpegKit
-        product: lcms2
-      - package: FFmpegKit
-        product: libdav1d
+        product: FFmpegKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.lingyue.app
