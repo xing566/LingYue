@@ -3,7 +3,7 @@ import SwiftUI
 /// 可拖动的悬浮监控小窗：显示设备温度状态（系统热状态）与剩余内存，可拖到屏幕任意位置。
 /// iOS 不提供公开的设备温度读数，用 ProcessInfo.thermalState 近似（正常/略高/偏热/过热）。
 struct FloatingMonitorView: View {
-    @AppStorage("floatingMonitorEnabled") private var enabled = false
+    @AppStorage("floatingMonitorEnabled") private var enabled = true
     @State private var offset = CGSize.zero
     @State private var memText = "—"
     @State private var thermalText = "正常"

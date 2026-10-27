@@ -186,6 +186,12 @@ struct NowPlayingView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .overlay(alignment: .topTrailing) {
+            // 悬浮监控（温度/内存/网速，可拖动），播放页也显示
+            FloatingMonitorView()
+                .padding(.top, 8)
+                .padding(.trailing, 12)
+        }
         .onChange(of: player.currentSong?.id) { _, _ in
             if showLyrics {
                 lyrics = []

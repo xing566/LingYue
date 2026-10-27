@@ -171,7 +171,7 @@ struct SettingsView: View {
     /// 悬浮监控开关（存 UserDefaults，RootTabView 读取生效）。
     private var floatingMonitorBinding: Binding<Bool> {
         Binding(
-            get: { UserDefaults.standard.object(forKey: "floatingMonitorEnabled") as? Bool ?? false },
+            get: { UserDefaults.standard.object(forKey: "floatingMonitorEnabled") as? Bool ?? true },
             set: { UserDefaults.standard.set($0, forKey: "floatingMonitorEnabled") }
         )
     }

@@ -51,7 +51,7 @@ final class PlayerManager {
         }
         currentSong = song
         duration = song.duration
-        // 非原生格式按需转码（优先用提前缓存的 WAV；没有才现转）
+        // 非原生格式按需转码到磁盘（AppCache/Transcoded，可见），优先用提前缓存的下一首 WAV
         if song.source == .local, FFmpegTranscoder.needsTranscode(song.fileURL) {
             transcodeThenPlay(song)
         } else {
@@ -63,68 +63,67 @@ final class PlayerManager {
         autoFetchCoverIfNeeded(for: song)
     }
 
-    /// 提前缓存的下一首转码数据（存在**内存**里，不落盘）；切过去时用内存播放器秒播。
-    private var precachedNextData: Data?
-    private var precachedNextSongID: UUID?
-    /// 内存播放用的 resource loader，需要强引用防止被释放。
-    private var retainedLoaders: [AnyObject] = []
+    /// 提前转好的下一首 WAV（存磁盘 AppCache/Transcoded，切过去秒播）
+    private var precachedNextWav: URL?
 
-    /// 预转下一首到**内存**：后台把队列里下一首（若需转码）解码成 WAV Data 放内存。
+    /// 预转下一首到磁盘：后台把队列里下一首（若需转码）转成 WAV 放 AppCache/Transcoded。
     private func precacheNext() {
         guard let current = currentSong,
               let idx = queue.firstIndex(where: { $0.id == current.id }),
               idx + 1 < queue.count else { return }
         let next = queue[idx + 1]
         guard next.source == .local, FFmpegTranscoder.needsTranscode(next.fileURL) else { return }
-        guard precachedNextSongID != next.id else { return } // 已在预缓存中
+        let target = FFmpegTranscoder.wavURL(for: next.fileURL)
+        if FileManager.default.fileExists(atPath: target.path) {
+            precachedNextWav = target
+            return
+        }
         let input = next.fileURL
         Task { [weak self] in
-            let data = await FFmpegTranscoder.decodeToWavData(input: input)
+            let wav = await FFmpegTranscoder.decodeToWav(input: input)
             await MainActor.run {
-                guard let self, let data else { return }
-                self.precachedNextData = data
-                self.precachedNextSongID = next.id
+                guard let self, let wav else { return }
+                self.precachedNextWav = wav
             }
         }
     }
 
-    /// 非原生格式播放：优先用内存里预缓存的下一首 Data（命中则秒播）；否则现解码成内存 Data。
+    /// 非原生格式播放：优先用提前缓存的 WAV；没有则现转（写磁盘 AppCache/Transcoded）再播。
     private func transcodeThenPlay(_ song: Song) {
-        // 命中提前缓存的下一首 → 直接用内存数据，秒播
-        if let data = precachedNextData, precachedNextSongID == song.id {
-            precachedNextData = nil
-            precachedNextSongID = nil
+        if let wav = precachedNextWav,
+           wav == FFmpegTranscoder.wavURL(for: song.fileURL),
+           FileManager.default.fileExists(atPath: wav.path) {
+            precachedNextWav = nil
             isTranscoding = false
-            playFromMemory(data: data, song: song)
+            playFromDiskWav(wav, song: song)
             precacheNext()
             return
         }
         isTranscoding = true
         let inputURL = song.fileURL
         Task { [weak self] in
-            let data = await FFmpegTranscoder.decodeToWavData(input: inputURL)
+            let wav = await FFmpegTranscoder.decodeToWav(input: inputURL)
             await MainActor.run {
                 guard let self else { return }
                 defer { self.isTranscoding = false }
-                guard let data else {
+                guard let wav else {
                     self.duration = 0 // 转码失败：不播，保留原文件
                     return
                 }
-                self.playFromMemory(data: data, song: song)
+                self.playFromDiskWav(wav, song: song)
                 self.precacheNext()
             }
         }
     }
 
-    /// 用内存 WAV Data 播放（AVAssetResourceLoader 从内存喂给 AVPlayer，不落盘）。
-    private func playFromMemory(data: Data, song: Song) {
+    /// 用磁盘上的 WAV 播放（播放用 WAV 只是临时，曲库持久化的 fileURL 仍保留原文件）。
+    private func playFromDiskWav(_ wav: URL, song: Song) {
         var s = song
+        s.fileURL = wav
         s.duration = 0 // 由 attachPlayer 从真实媒体读
         currentSong = s
         if let qi = queue.firstIndex(where: { $0.id == s.id }) { queue[qi] = s }
-        let loader = InMemoryWAVAsset(data: data)
-        retainedLoaders.append(loader)
-        attachPlayer(item: loader.makeItem(), to: s)
+        attachPlayer(to: s)
         resume()
         updateNowPlaying()
     }

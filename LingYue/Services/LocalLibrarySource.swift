@@ -41,23 +41,48 @@ struct LocalLibrarySource: MusicSource {
                 songs.append(song)
             }
         }
+        // 恢复：扫描 AppCache/Transcoded 里孤立的转码 WAV。
+        // 旧版本曾「转码后删除原文件」，导致曲库里的歌消失；这里把仍在的 WAV 找回。
+        let transDir = FFmpegTranscoder.transcodedDir
+        if let transFiles = try? FileManager.default.contentsOfDirectory(
+            at: transDir,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: [.skipsHiddenFiles]) {
+            for tf in transFiles where tf.pathExtension.lowercased() == "wav" {
+                let base = tf.deletingPathExtension().lastPathComponent
+                // 若已有同名原文件（makeSong 已优先用该 WAV），跳过避免重复
+                if songs.contains(where: { $0.fileURL.deletingPathExtension().lastPathComponent == base }) { continue }
+                if let song = await makeSong(from: tf) {
+                    songs.append(song)
+                }
+            }
+        }
         // 按加入时间倒序
         return songs.sorted { $0.dateAdded > $1.dateAdded }
     }
 
     /// 从单个文件构建 Song，并提取元数据。
-    /// 非原生格式（WMA 等）**不再在导入时全量转码**，避免 200 首歌瞬间占满十几个 GB；
-    /// 改为「按需转码」：播放到该曲时再由 PlayerManager 用 FFmpeg 转成 WAV 播放。
+    /// 非原生格式（WMA 等）不再在导入时全量转码（避免瞬间占满磁盘）；
+    /// 播放时由 PlayerManager 按需转成 WAV（AppCache/Transcoded，磁盘可见）。
+    /// 若该文件已存在对应转码 WAV，则直接用它（兼容旧版删掉原文件的情况）。
     func makeSong(from fileURL: URL) async -> Song? {
-        let meta = await extractMetadata(from: fileURL)
+        var playURL = fileURL
+        var meta = await extractMetadata(from: fileURL)
+        if FFmpegTranscoder.needsTranscode(fileURL) {
+            let wav = FFmpegTranscoder.wavURL(for: fileURL)
+            if FileManager.default.fileExists(atPath: wav.path) {
+                playURL = wav
+                meta = await extractMetadata(from: wav)
+            }
+        }
         let creation = (try? fileURL.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()
         return Song(
             title: meta.title,
             artist: meta.artist,
             album: meta.album,
             artworkData: meta.artwork,
-            fileURL: fileURL,          // 保留原文件，转码延迟到播放时
-            duration: meta.duration,   // 原生解不了的格式时长为 0，播放时转码后补
+            fileURL: playURL,
+            duration: meta.duration,
             trackNumber: meta.trackNumber,
             dateAdded: creation
         )

@@ -77,7 +77,7 @@ struct CacheManagementView: View {
             } header: {
                 Text("转码文件")
             } footer: {
-                Text("当前转码改为「内存方案」：非原生格式（WMA 等）播放时解码到运行内存、不写进本地。此目录仅保留历史旧版残留的 WAV，占用很小可直接在手机「文件 → 我的 iPhone → 聆乐 → AppCache → Transcoded」里删掉。")
+                Text("非原生格式（WMA 等）播放时才按需转成 WAV 存这里（磁盘可见，不隐藏）。只转播放到的歌 + 提前缓存的下一首；可在手机「文件 → 我的 iPhone → 聆乐 → AppCache → Transcoded」里手动删。")
             }
 
             Section {
